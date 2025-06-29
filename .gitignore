@@ -6,3 +6,6 @@ server/uploads/
 .env
 client/.env
 server/.env
+*.log
+.DS_Store
+.vscode/
