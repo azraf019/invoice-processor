@@ -1,0 +1,8 @@
+node_modules/
+client/node_modules/
+server/node_modules/
+client/build/
+server/uploads/
+.env
+client/.env
+server/.env
