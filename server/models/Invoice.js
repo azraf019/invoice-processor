@@ -1,13 +1,12 @@
 const mongoose = require('mongoose');
 
 const invoiceSchema = new mongoose.Schema({
-  invoiceNumber: String,
-  date: String,
-  seller: String,
-  buyer: String,
-  totalAmount: Number,
-  tax: Number,
-  items: [{ description: String, quantity: Number, unitPrice: Number }],
+  invoiceNumber: { type: String, required: true, default: '' },
+  invoiceDate: { type: String, default: '' },
+  supplierName: { type: String, default: '' },
+  totalAmount: { type: Number, default: 0 },
+  paymentTerms: { type: String, default: '' },
+  deliveryDate: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now },
 });
 

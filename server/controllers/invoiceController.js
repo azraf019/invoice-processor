@@ -1,33 +1,28 @@
+const { processPDF } = require('../services/geminiService');
 const Invoice = require('../models/Invoice');
-const { processPDF } = require('../services/grokService');
 const xlsx = require('xlsx');
 const fs = require('fs');
 
 exports.uploadInvoice = async (req, res, next) => {
   try {
-    const { prompt } = req.body;
+    if (!req.file) {
+      return res.status(400).json({ message: 'No PDF file uploaded' });
+    }
+    if (!req.body.prompt) {
+      return res.status(400).json({ message: 'Prompt is required' });
+    }
+
     const pdfPath = req.file.path;
-
-    // Process PDF with Grok 3
+    const prompt = req.body.prompt;
     const extractedData = await processPDF(pdfPath, prompt);
+    console.log('Extracted data to save:', extractedData);
 
-    // Save to MongoDB
-    const invoice = new Invoice({
-      invoiceNumber: extractedData.invoiceNumber || 'N/A',
-      date: extractedData.date || 'N/A',
-      seller: extractedData.seller || 'N/A',
-      buyer: extractedData.buyer || 'N/A',
-      totalAmount: extractedData.totalAmount || 0,
-      tax: extractedData.tax || 0,
-      items: extractedData.items || [],
-    });
+    const invoice = new Invoice(extractedData);
     await invoice.save();
 
-    // Clean up uploaded file
-    fs.unlinkSync(pdfPath);
-
-    res.json({ message: 'Invoice processed and saved', data: invoice });
+    res.status(200).json({ message: 'Invoice processed and saved', data: invoice.toObject() });
   } catch (error) {
+    console.error('Controller error:', error.message);
     next(error);
   }
 };
@@ -35,7 +30,7 @@ exports.uploadInvoice = async (req, res, next) => {
 exports.getInvoices = async (req, res, next) => {
   try {
     const invoices = await Invoice.find().sort({ createdAt: -1 });
-    res.json(invoices);
+    res.json(invoices.map(invoice => invoice.toObject()));
   } catch (error) {
     next(error);
   }
@@ -45,13 +40,7 @@ exports.exportExcel = async (req, res, next) => {
   try {
     const invoices = await Invoice.find();
     const data = invoices.map(invoice => ({
-      InvoiceNumber: invoice.invoiceNumber,
-      Date: invoice.date,
-      Seller: invoice.seller,
-      Buyer: invoice.buyer,
-      TotalAmount: invoice.totalAmount,
-      Tax: invoice.tax,
-      Items: invoice.items.map(item => `${item.description} (Qty: ${item.quantity}, Price: ${item.unitPrice})`).join('; '),
+      LoadingPort: invoice.loadingPort,
     }));
 
     const ws = xlsx.utils.json_to_sheet(data);
