@@ -1,3 +1,4 @@
+// server/routes/invoiceRoutes.js
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -14,7 +15,11 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Routes
+// Routes for single and bulk PDF uploads
 router.post('/upload', upload.single('pdf'), invoiceController.uploadInvoice);
+router.post('/bulk-upload', upload.array('files'), invoiceController.bulkUpload);
+
+router.get('/', invoiceController.getInvoices);
+router.get('/export-excel', invoiceController.exportExcel);
 
 module.exports = router;
