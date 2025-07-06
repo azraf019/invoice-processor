@@ -1,13 +1,18 @@
+// server/models/Invoice.js
 const mongoose = require('mongoose');
 
 const invoiceSchema = new mongoose.Schema({
-  invoiceNumber: { type: String, required: true, default: '' },
-  invoiceDate: { type: String, default: '' },
-  supplierName: { type: String, default: '' },
-  totalAmount: { type: Number, default: 0 },
-  paymentTerms: { type: String, default: '' },
-  deliveryDate: { type: String, default: '' },
-  createdAt: { type: Date, default: Date.now },
+  invoiceNumber: { type: String },
+  invoiceDate: { type: String },
+  supplierName: { type: String },
+  totalAmount: { type: Number },
+  paymentTerms: { type: String },
+  deliveryDate: { type: String },
+  // --- NEW FIELD ---
+  // Store the filename of the original PDF for later retrieval
+  pdfFilename: { type: String, required: true },
+}, {
+  timestamps: true,
 });
 
 module.exports = mongoose.model('Invoice', invoiceSchema);

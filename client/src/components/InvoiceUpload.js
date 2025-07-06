@@ -3,258 +3,236 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const Loader = () => (
-  <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex flex-col items-center justify-center z-50">
-    <div className="animate-spin rounded-full h-24 w-24 border-t-4 border-b-4 border-white mb-4"></div>
-    <div className="text-white text-xl">Processing... Please Wait</div>
-  </div>
+// --- Define the absolute base URL for the backend server ---
+const BACKEND_URL = 'http://localhost:5000';
+
+// --- Icon Components ---
+const UploadCloudIcon = (props) => ( <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg> );
+const FileTextIcon = (props) => ( <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg> );
+const EyeIcon = (props) => ( <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg> );
+const XIcon = (props) => ( <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> );
+
+const Loader = () => ( <div className="fixed inset-0 bg-slate-900 bg-opacity-60 flex flex-col items-center justify-center z-50 backdrop-blur-sm"><div className="animate-spin rounded-full h-24 w-24 border-t-4 border-b-4 border-sky-500 mb-4"></div><div className="text-white text-xl font-semibold">Processing... Please Wait</div></div> );
+
+// --- Reusable component for displaying a single detail item ---
+const DetailItem = ({ label, value }) => (
+    <div className="py-3">
+        <dt className="text-sm font-medium text-slate-500">{label}</dt>
+        <dd className="mt-1 text-base text-slate-900 font-semibold">{value || 'N/A'}</dd>
+    </div>
 );
 
-const InvoiceUpload = () => {
-  // State for all invoices in the DB
-  const [invoices, setInvoices] = useState([]);
-  // State for ONLY the most recently uploaded invoices
-  const [newlyUploadedInvoices, setNewlyUploadedInvoices] = useState([]);
-  
-  // Form and UI states
-  const [file, setFile] = useState(null);
-  const [prompt, setPrompt] = useState('Extract invoiceNumber, invoiceDate, supplierName, totalAmount, paymentTerms, and deliveryDate.');
-  const [bulkFiles, setBulkFiles] = useState(null);
-  const [bulkPrompt, setBulkPrompt] = useState('Extract invoiceNumber, invoiceDate, supplierName, totalAmount, paymentTerms, and deliveryDate.');
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+// --- UPDATED DETAIL PANEL COMPONENT ---
+const InvoiceDetailPanel = ({ invoice, onClose }) => {
+    if (!invoice) return null;
 
-  // Fetch all invoices on initial component mount
-  useEffect(() => {
-    fetchInvoices();
-  }, []);
+    const pdfUrl = `${BACKEND_URL}/uploads/${invoice.pdfFilename}`;
 
-  // Function to fetch all processed invoices from the DB
-  const fetchInvoices = async () => {
-    try {
-      // FIXED: Corrected API endpoint
-      const response = await axios.get('/api');
-      setInvoices(response.data);
-    } catch (error) {
-      console.error('Error fetching invoices:', error);
-      setError('Could not fetch processed invoices.');
-    }
-  };
+    const {
+        invoiceNumber,
+        invoiceDate,
+        supplierName,
+        totalAmount,
+        paymentTerms,
+        deliveryDate
+    } = invoice;
 
-  // Handlers for file and prompt changes
-  const handleFileChange = (e) => setFile(e.target.files[0]);
-  const handlePromptChange = (e) => setPrompt(e.target.value);
-  const handleBulkFilesChange = (e) => setBulkFiles(e.target.files);
-  const handleBulkPromptChange = (e) => setBulkPrompt(e.target.value);
-
-  // --- UPDATED LOGIC FOR SINGLE UPLOAD ---
-  const handleUpload = async () => {
-    if (!file || !prompt) {
-      setError('Please select a file and enter a prompt.');
-      return;
-    }
-    setIsLoading(true);
-    setError('');
-    setMessage('');
-    setNewlyUploadedInvoices([]); // Clear previous results
-
-    const formData = new FormData();
-    formData.append('pdf', file);
-    formData.append('prompt', prompt);
-
-    try {
-      // FIXED: Corrected API endpoint
-      const response = await axios.post('/api/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      
-      setMessage(response.data.message);
-      const newInvoice = response.data.data;
-      
-      // Update state instantly with the new data from the response
-      setNewlyUploadedInvoices([newInvoice]);
-      setInvoices(prevInvoices => [newInvoice, ...prevInvoices]); // Add to the top of the main list
-
-    } catch (err) {
-      setError(err.response?.data?.message || 'An error occurred during single upload.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // --- UPDATED LOGIC FOR BULK UPLOAD ---
-  const handleBulkUpload = async () => {
-    if (!bulkFiles || bulkFiles.length === 0 || !bulkPrompt) {
-      setError('Please select one or more PDF files and enter a prompt for bulk upload.');
-      return;
-    }
-    setIsLoading(true);
-    setError('');
-    setMessage('');
-    setNewlyUploadedInvoices([]); // Clear previous results
-
-    const formData = new FormData();
-    for (let i = 0; i < bulkFiles.length; i++) {
-        formData.append('files', bulkFiles[i]);
-    }
-    formData.append('prompt', bulkPrompt);
-
-    try {
-      // FIXED: Corrected API endpoint
-      const response = await axios.post('/api/bulk-upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      setMessage(response.data.message);
-      const newInvoices = response.data.data;
-
-      // Update state instantly with the new data from the response
-      setNewlyUploadedInvoices(newInvoices);
-      setInvoices(prevInvoices => [...newInvoices, ...prevInvoices]); // Add to the top of the main list
-
-    } catch (err) {
-      setError(err.response?.data?.message || 'An error occurred during bulk upload.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Logic for exporting data to Excel
-  const handleExport = async () => {
-    try {
-      // FIXED: Corrected API endpoint
-      const response = await axios.get('/api/export-excel', {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'invoices.xlsx');
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (error) {
-      console.error('Error exporting data:', error);
-      setError('Failed to export data.');
-    }
-  };
-
-  return (
-    <>
-      {/* Upload Forms Section */}
-      <div className="max-w-3xl mx-auto p-6 border rounded-lg shadow-xl bg-white mb-8">
-        {isLoading && <Loader />}
-        {message && <div className="bg-green-100 text-green-800 p-3 rounded mb-4">{message}</div>}
-        {error && <div className="bg-red-100 text-red-800 p-3 rounded mb-4">{error}</div>}
-
-        <div className="mb-8 p-4 border rounded-md bg-gray-50">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-800">Single Invoice Upload 📄</h2>
-          <div className="mb-4">
-            <label className="block text-gray-700 font-medium">PDF File</label>
-            <input type="file" onChange={handleFileChange} className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 mt-1" accept="application/pdf" />
-          </div>
-          <div className="mb-4">
-            <label className="block text-gray-700 font-medium">Extraction Prompt</label>
-            <textarea value={prompt} onChange={handlePromptChange} rows="3" className="w-full p-2 border rounded mt-1" />
-          </div>
-          <button onClick={handleUpload} disabled={isLoading} className="w-full bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors duration-300">
-            {isLoading ? 'Processing...' : 'Upload & Process'}
-          </button>
-        </div>
-
-        <div className="p-4 border rounded-md bg-gray-50">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-800">Bulk Invoice Upload 📂</h2>
-          <div className="mb-4">
-            <label className="block text-gray-700 font-medium">PDF Files</label>
-            <input type="file" onChange={handleBulkFilesChange} className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 mt-1" accept="application/pdf" multiple />
-          </div>
-          <div className="mb-4">
-            <label className="block text-gray-700 font-medium">Extraction Prompt for Bulk Upload</label>
-            <textarea value={bulkPrompt} onChange={handleBulkPromptChange} rows="3" className="w-full p-2 border rounded mt-1" />
-          </div>
-          <button onClick={handleBulkUpload} disabled={isLoading} className="w-full bg-teal-600 text-white p-2 rounded-lg hover:bg-teal-700 disabled:bg-teal-300 transition-colors duration-300">
-            {isLoading ? 'Processing...' : 'Bulk Upload & Process'}
-          </button>
-        </div>
-      </div>
-
-      {/* --- NEW SECTION: Display Newly Uploaded Invoices --- */}
-      {newlyUploadedInvoices.length > 0 && (
-        <div className="max-w-6xl mx-auto p-6 border-2 border-green-400 rounded-lg shadow-xl bg-green-50 mb-8">
-            <h2 className="text-2xl font-semibold text-green-800 mb-4">Last Uploaded Invoices ✨</h2>
-            <div className="overflow-x-auto">
-                <table className="min-w-full bg-white">
-                    <thead className="bg-green-200">
-                        <tr>
-                            <th className="py-2 px-4 border-b text-left">Invoice Number</th>
-                            <th className="py-2 px-4 border-b text-left">Invoice Date</th>
-                            <th className="py-2 px-4 border-b text-left">Supplier Name</th>
-                            <th className="py-2 px-4 border-b text-right">Total Amount</th>
-                            <th className="py-2 px-4 border-b text-left">Payment Terms</th>
-                            <th className="py-2 px-4 border-b text-left">Delivery Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {newlyUploadedInvoices.map((invoice) => (
-                            <tr key={`new-${invoice._id}`} className="hover:bg-green-100">
-                                <td className="py-2 px-4 border-b">{invoice.invoiceNumber || 'N/A'}</td>
-                                <td className="py-2 px-4 border-b">{invoice.invoiceDate || 'N/A'}</td>
-                                <td className="py-2 px-4 border-b">{invoice.supplierName || 'N/A'}</td>
-                                <td className="py-2 px-4 border-b text-right">{invoice.totalAmount != null ? invoice.totalAmount.toFixed(2) : 'N/A'}</td>
-                                <td className="py-2 px-4 border-b">{invoice.paymentTerms || 'N/A'}</td>
-                                <td className="py-2 px-4 border-b">{invoice.deliveryDate || 'N/A'}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+    return (
+        <div className="fixed inset-0 bg-slate-900 bg-opacity-60 z-40" onClick={onClose}>
+            <div className="fixed top-0 right-0 h-full w-[90vw] max-w-[1600px] bg-white shadow-2xl transform transition-transform duration-300 ease-in-out translate-x-0" onClick={(e) => e.stopPropagation()}>
+                <div className="flex flex-col h-full">
+                    <div className="flex justify-between items-center p-4 border-b bg-slate-50">
+                        <h2 className="text-xl font-bold text-slate-800">Invoice Details: {invoice.invoiceNumber || ''}</h2>
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-200">
+                            <XIcon className="w-6 h-6 text-slate-600" />
+                        </button>
+                    </div>
+                    <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-6 p-6 overflow-auto">
+                        <div className="md:col-span-2 bg-slate-100 rounded-lg overflow-hidden h-[calc(100vh-100px)]">
+                            <embed src={pdfUrl} type="application/pdf" className="w-full h-full" />
+                        </div>
+                        <div className="md:col-span-1 overflow-auto h-[calc(100vh-100px)]">
+                            <h3 className="text-lg font-semibold text-slate-700 mb-2">Extracted Data</h3>
+                            <div className="bg-slate-50 p-4 rounded-lg border">
+                                <dl className="divide-y divide-slate-200">
+                                    <DetailItem label="Invoice Number" value={invoiceNumber} />
+                                    <DetailItem label="Supplier Name" value={supplierName} />
+                                    <DetailItem label="Total Amount" value={totalAmount ? totalAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A'} />
+                                    <DetailItem label="Invoice Date" value={invoiceDate} />
+                                    <DetailItem label="Delivery Date" value={deliveryDate} />
+                                    <DetailItem label="Payment Terms" value={paymentTerms} />
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-      )}
+    );
+};
 
-      {/* Main Invoice List Table Section */}
-      <div className="max-w-6xl mx-auto p-6 border rounded-lg shadow-xl bg-white">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-semibold text-gray-800">All Processed Invoices</h2>
-          <button onClick={handleExport} className="bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300">
-            Export to Excel
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white">
-            <thead className="bg-gray-200">
-              <tr>
-                <th className="py-2 px-4 border-b text-left">Invoice Number</th>
-                <th className="py-2 px-4 border-b text-left">Invoice Date</th>
-                <th className="py-2 px-4 border-b text-left">Supplier Name</th>
-                <th className="py-2 px-4 border-b text-right">Total Amount</th>
-                <th className="py-2 px-4 border-b text-left">Payment Terms</th>
-                <th className="py-2 px-4 border-b text-left">Delivery Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.length > 0 ? (
-                invoices.map((invoice) => (
-                  <tr key={invoice._id} className="hover:bg-gray-100">
-                    <td className="py-2 px-4 border-b">{invoice.invoiceNumber || 'N/A'}</td>
-                    <td className="py-2 px-4 border-b">{invoice.invoiceDate || 'N/A'}</td>
-                    <td className="py-2 px-4 border-b">{invoice.supplierName || 'N/A'}</td>
-                    <td className="py-2 px-4 border-b text-right">{invoice.totalAmount != null ? invoice.totalAmount.toFixed(2) : 'N/A'}</td>
-                    <td className="py-2 px-4 border-b">{invoice.paymentTerms || 'N/A'}</td>
-                    <td className="py-2 px-4 border-b">{invoice.deliveryDate || 'N/A'}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="6" className="text-center py-4 text-gray-500">No invoices processed yet.</td>
-                </tr>
+
+const InvoiceUpload = () => {
+    const [invoices, setInvoices] = useState([]);
+    const [newlyUploadedInvoices, setNewlyUploadedInvoices] = useState([]);
+    const [files, setFiles] = useState(null);
+    const [prompt, setPrompt] = useState('Extract invoiceNumber, invoiceDate, supplierName, totalAmount, paymentTerms, and deliveryDate.');
+    const [message, setMessage] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    
+    const [selectedInvoice, setSelectedInvoice] = useState(null);
+
+    useEffect(() => { fetchInvoices(); }, []);
+
+    const fetchInvoices = async () => {
+        try {
+            const response = await axios.get('/api');
+            setInvoices(response.data);
+        } catch (error) {
+            console.error('Error fetching invoices:', error);
+            setError('Could not fetch processed invoices.');
+        }
+    };
+
+    const handleFilesChange = (e) => setFiles(e.target.files);
+    const handlePromptChange = (e) => setPrompt(e.target.value);
+
+    const handleUpload = async () => {
+        if (!files || files.length === 0 || !prompt) {
+            setError('Please select one or more PDF files and enter a prompt.');
+            return;
+        }
+        setIsLoading(true);
+        setError('');
+        setMessage('');
+        setNewlyUploadedInvoices([]);
+
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            formData.append('files', files[i]);
+        }
+        formData.append('prompt', prompt);
+
+        try {
+            const response = await axios.post('/api/bulk-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+            setMessage(response.data.message);
+            const newInvoices = response.data.data;
+            setNewlyUploadedInvoices(newInvoices);
+            setInvoices(prevInvoices => [...newInvoices, ...prevInvoices]);
+        } catch (err) {
+            setError(err.response?.data?.message || 'An error occurred during upload.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleExport = async () => {
+        try {
+            const response = await axios.get('/api/export-excel', { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', 'invoices.xlsx');
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (error) {
+            console.error('Error exporting data:', error);
+            setError('Failed to export data.');
+        }
+    };
+
+    const renderInvoiceTable = (invoiceList, title, { isNew = false, showExport = false } = {}) => (
+      <div className={`max-w-7xl mx-auto mt-12 ${isNew ? 'mb-8' : ''}`}>
+          <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-slate-800">{title} {isNew && '✨'}</h2>
+              {showExport && (
+                  <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300 shadow-md">
+                      Export to Excel
+                  </button>
               )}
-            </tbody>
-          </table>
-        </div>
+          </div>
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                      <thead className="bg-slate-100">
+                          <tr>
+                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Invoice Number</th>
+                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Invoice Date</th>
+                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Supplier Name</th>
+                              <th className="py-3 px-4 text-right font-semibold text-slate-600">Total Amount</th>
+                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Payment Terms</th>
+                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Delivery Date</th>
+                              <th className="py-3 px-4 text-center font-semibold text-slate-600">Actions</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                          {invoiceList.length > 0 ? (
+                              invoiceList.map((invoice) => (
+                                  <tr key={isNew ? `new-${invoice._id}` : invoice._id} className="hover:bg-sky-50/50">
+                                      <td className="py-3 px-4 text-slate-700 font-medium">{invoice.invoiceNumber || 'N/A'}</td>
+                                      <td className="py-3 px-4 text-slate-500">{invoice.invoiceDate || 'N/A'}</td>
+                                      <td className="py-3 px-4 text-slate-700">{invoice.supplierName || 'N/A'}</td>
+                                      <td className="py-3 px-4 text-right text-slate-700 font-semibold">{invoice.totalAmount != null ? `$${invoice.totalAmount.toFixed(2)}` : 'N/A'}</td>
+                                      <td className="py-3 px-4 text-slate-500 truncate max-w-xs">{invoice.paymentTerms || 'N/A'}</td>
+                                      <td className="py-3 px-4 text-slate-500">{invoice.deliveryDate || 'N/A'}</td>
+                                      <td className="py-3 px-4 text-center">
+                                          <button onClick={() => setSelectedInvoice(invoice)} className="text-sky-600 hover:text-sky-800 p-1 rounded-md hover:bg-sky-100">
+                                              <EyeIcon className="w-5 h-5" />
+                                          </button>
+                                      </td>
+                                  </tr>
+                              ))
+                          ) : (
+                              <tr><td colSpan="7" className="text-center py-10 text-slate-500">No invoices processed yet.</td></tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
+          </div>
       </div>
-    </>
   );
+
+    return (
+        <div className="space-y-12 px-4">
+            {isLoading && <Loader />}
+            <InvoiceDetailPanel invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+
+            <div className="max-w-3xl mx-auto">
+                <div className="bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-indigo-100 text-indigo-600 p-2 rounded-lg"><FileTextIcon className="w-6 h-6" /></div>
+                        <h2 className="text-2xl font-bold text-slate-800">Invoice Upload</h2>
+                    </div>
+                    <p className="text-slate-500 mt-2">Upload one or more PDF files for processing.</p>
+                    <div className="mt-6 space-y-6">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">PDF File(s)</label>
+                            <input type="file" onChange={handleFilesChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-colors duration-200" multiple />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Extraction Prompt</label>
+                            <textarea value={prompt} onChange={handlePromptChange} rows="3" className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" />
+                        </div>
+                        <button onClick={handleUpload} disabled={isLoading} className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-300 transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                            <UploadCloudIcon className="w-5 h-5" />
+                            <span>{isLoading ? 'Processing...' : 'Upload & Process'}</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="max-w-6xl mx-auto mt-8 space-y-4">
+                {message && <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-r-lg" role="alert"><p className="font-bold">Success</p><p>{message}</p></div>}
+                {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-r-lg" role="alert"><p className="font-bold">Error</p><p>{error}</p></div>}
+            </div>
+
+            {newlyUploadedInvoices.length > 0 && renderInvoiceTable(newlyUploadedInvoices, "Last Uploaded Invoices", { isNew: true })}
+            
+            {renderInvoiceTable(invoices, "All Processed Invoices", { showExport: true })}
+        </div>
+    );
 };
 
 export default InvoiceUpload;
