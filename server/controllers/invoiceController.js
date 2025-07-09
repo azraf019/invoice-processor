@@ -8,6 +8,7 @@ const path = require('path'); // Import the path module
 
 // ... (getInvoices, exportExcel, clearInvoices functions remain the same) ...
 
+
 exports.uploadInvoice = async (req, res, next) => {
   try {
     if (!req.file) {
@@ -92,6 +93,23 @@ exports.bulkUpload = async (req, res, next) => {
       });
     }
     next(error);
+  }
+};
+
+exports.updateInvoice = async (req, res, next) => {
+  try {
+      const { id } = req.params;
+      const updatedData = req.body;
+
+      const updatedInvoice = await Invoice.findByIdAndUpdate(id, updatedData, { new: true });
+
+      if (!updatedInvoice) {
+          return res.status(404).json({ message: 'Invoice not found' });
+      }
+
+      res.status(200).json({ message: 'Invoice updated successfully', data: updatedInvoice.toObject() });
+  } catch (error) {
+      next(error);
   }
 };
 

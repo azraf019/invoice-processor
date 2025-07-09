@@ -31,9 +31,7 @@ router.post('/bulk-upload', upload.array('files'), invoiceController.bulkUpload)
 router.get('/', invoiceController.getInvoices);
 router.get('/export-excel', invoiceController.exportExcel);
 
-// Route to get a specific invoice's PDF
-// This route is no longer needed if using express.static, but can be kept for other purposes if needed.
-// router.get('/:id/pdf', invoiceController.getInvoicePDF);
+router.put('/:id', invoiceController.updateInvoice);
 
 // Development route to clear the database
 router.delete('/clear', invoiceController.clearInvoices);
