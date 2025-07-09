@@ -2,76 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import Loader from './Loader';
+import InvoiceDetailPanel from './InvoiceDetailPanel';
+import { FileTextIcon, UploadCloudIcon, EyeIcon } from './icons';
 
-// --- Define the absolute base URL for the backend server ---
-const BACKEND_URL = 'http://localhost:5000';
-
-// --- Icon Components ---
-const UploadCloudIcon = (props) => ( <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg> );
-const FileTextIcon = (props) => ( <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg> );
-const EyeIcon = (props) => ( <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg> );
-const XIcon = (props) => ( <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> );
-
-const Loader = () => ( <div className="fixed inset-0 bg-slate-900 bg-opacity-60 flex flex-col items-center justify-center z-50 backdrop-blur-sm"><div className="animate-spin rounded-full h-24 w-24 border-t-4 border-b-4 border-sky-500 mb-4"></div><div className="text-white text-xl font-semibold">Processing... Please Wait</div></div> );
-
-// --- Reusable component for displaying a single detail item ---
-const DetailItem = ({ label, value }) => (
-    <div className="py-3">
-        <dt className="text-sm font-medium text-slate-500">{label}</dt>
-        <dd className="mt-1 text-base text-slate-900 font-semibold">{value || 'N/A'}</dd>
-    </div>
-);
-
-// --- UPDATED DETAIL PANEL COMPONENT ---
-const InvoiceDetailPanel = ({ invoice, onClose }) => {
-    if (!invoice) return null;
-
-    const pdfUrl = `${BACKEND_URL}/uploads/${invoice.pdfFilename}`;
-
-    const {
-        invoiceNumber,
-        invoiceDate,
-        supplierName,
-        totalAmount,
-        paymentTerms,
-        deliveryDate
-    } = invoice;
-
-    return (
-        <div className="fixed inset-0 bg-slate-900 bg-opacity-60 z-40" onClick={onClose}>
-            <div className="fixed top-0 right-0 h-full w-[90vw] max-w-[1600px] bg-white shadow-2xl transform transition-transform duration-300 ease-in-out translate-x-0" onClick={(e) => e.stopPropagation()}>
-                <div className="flex flex-col h-full">
-                    <div className="flex justify-between items-center p-4 border-b bg-slate-50">
-                        <h2 className="text-xl font-bold text-slate-800">Invoice Details: {invoice.invoiceNumber || ''}</h2>
-                        <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-200">
-                            <XIcon className="w-6 h-6 text-slate-600" />
-                        </button>
-                    </div>
-                    <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-6 p-6 overflow-auto">
-                        <div className="md:col-span-2 bg-slate-100 rounded-lg overflow-hidden h-[calc(100vh-100px)]">
-                            <embed src={pdfUrl} type="application/pdf" className="w-full h-full" />
-                        </div>
-                        <div className="md:col-span-1 overflow-auto h-[calc(100vh-100px)]">
-                            <h3 className="text-lg font-semibold text-slate-700 mb-2">Extracted Data</h3>
-                            <div className="bg-slate-50 p-4 rounded-lg border">
-                                <dl className="divide-y divide-slate-200">
-                                    <DetailItem label="Invoice Number" value={invoiceNumber} />
-                                    <DetailItem label="Supplier Name" value={supplierName} />
-                                    <DetailItem label="Total Amount" value={totalAmount ? totalAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A'} />
-                                    <DetailItem label="Invoice Date" value={invoiceDate} />
-                                    <DetailItem label="Delivery Date" value={deliveryDate} />
-                                    <DetailItem label="Payment Terms" value={paymentTerms} />
-                                </dl>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
+// Refactored: Only main InvoiceUpload component remains here. All subcomponents are imported.
 const InvoiceUpload = () => {
     const [invoices, setInvoices] = useState([]);
     const [newlyUploadedInvoices, setNewlyUploadedInvoices] = useState([]);
@@ -80,7 +15,6 @@ const InvoiceUpload = () => {
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    
     const [selectedInvoice, setSelectedInvoice] = useState(null);
 
     useEffect(() => { fetchInvoices(); }, []);
@@ -124,6 +58,17 @@ const InvoiceUpload = () => {
             setError(err.response?.data?.message || 'An error occurred during upload.');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleSaveInvoice = async (updatedInvoice) => {
+        try {
+            await axios.put(`/api/${updatedInvoice._id}`, updatedInvoice);
+            setMessage('Invoice updated successfully!');
+            fetchInvoices(); // Refresh the invoices list
+            setSelectedInvoice(null); // Close the panel
+        } catch (err) {
+            setError(err.response?.data?.message || 'An error occurred while saving.');
         }
     };
 
@@ -197,7 +142,11 @@ const InvoiceUpload = () => {
     return (
         <div className="space-y-12 px-4">
             {isLoading && <Loader />}
-            <InvoiceDetailPanel invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+            <InvoiceDetailPanel
+                invoice={selectedInvoice}
+                onClose={() => setSelectedInvoice(null)}
+                onSave={handleSaveInvoice}
+            />
 
             <div className="max-w-3xl mx-auto">
                 <div className="bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
