@@ -1,6 +1,6 @@
 // server/controllers/invoiceController.js
 
-const { processPDF } = require('../services/geminiService');
+const { processPDF } = require('../services/pdfProcessorService');
 const Invoice = require('../models/Invoice');
 const xlsx = require('xlsx');
 const fs = require('fs');
@@ -68,7 +68,7 @@ exports.bulkUpload = async (req, res, next) => {
           pdfFilename: file.filename
         });
       } catch (processingError) {
-        console.error(`Failed to process file ${file.originalname}:`, processingError);
+        console.error(`Failed to process file ${file.originalname}:`, processingError.message);
         // If one file fails, delete it and continue
         try { fs.unlinkSync(file.path); } catch (e) { console.error("Error cleaning up file:", e); }
       }
