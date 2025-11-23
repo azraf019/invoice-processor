@@ -13,8 +13,9 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000' }));
 app.use(express.json());
 
-// Serve static files from the 'uploads' directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// The /api/pdf/:id route now handles serving files securely.
+// This static route is no longer needed and can cause conflicts.
+// app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Connect to MongoDB
 connectDB();

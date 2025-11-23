@@ -1,0 +1,89 @@
+### Implementation Plan: Dynamic and Scalable Invoice Prompts
+
+This document outlines the phased implementation plan for refactoring the InvoiceAI Processor to support dynamic, user-selectable prompts for data extraction.
+
+---
+
+### **Stage 1: Backend Foundation - Database Schema Update**
+
+**Goal:** Modify the database schema to support flexible data storage, laying the foundation for all subsequent changes.
+
+*   **Action:**
+    1.  Modify `server/models/Invoice.js`.
+    2.  Remove the static, named fields (e.g., `invoiceNumber`, `supplierName`, `totalAmount`).
+    3.  Replace them with a single `details` field of type `Map`, where keys are strings (the prompts) and values can be of mixed types.
+    4.  Keep essential metadata like `pdfFilename` and `timestamps`.
+
+*   **Testing:**
+    1.  Restart the backend server (`npm run dev` in the `server` directory).
+    2.  **Success Criteria:** The server must start successfully without any crashes or database connection errors. This validates that the new Mongoose schema is syntactically correct.
+
+---
+
+### **Stage 2: Backend Logic - Processing and Saving Dynamic Data**
+
+**Goal:** Adapt the backend services and controllers to handle the dynamic prompts and save data to the new schema.
+
+*   **Action:**
+    1.  In `server/controllers/invoiceController.js`, update the `bulk-upload` function to read an array of `prompts` from the multipart form-data request.
+    2.  Modify `server/services/pdfProcessorService.js` to accept this `prompts` array as an argument. The service will use this array to dynamically generate the extraction query for the AI.
+    3.  Update the `invoiceController` to take the key-value object returned by the service and save it directly into the `details` field of the new `Invoice` document.
+    4.  Update the `PUT /api/:id` route logic in `invoiceController.js` to correctly update key-value pairs within the `details` map.
+
+*   **Testing:**
+    1.  Use an API client (Postman, Insomnia, or curl).
+    2.  Make a `POST` request to `http://localhost:5000/api/bulk-upload`.
+    3.  Set the request body type to `form-data`.
+    4.  Add a `files` key and attach a sample PDF invoice.
+    5.  Add one or more keys for the prompts, using the format `prompts[]` (e.g., `prompts[]`: "Invoice Number", `prompts[]`: "Total Amount").
+    6.  **Success Criteria:** The request succeeds, and a new document appears in the MongoDB `invoices` collection. The document should have a `details` field containing a map with the correctly extracted data corresponding to the prompts you sent.
+
+---
+
+### **Stage 3: Frontend UI - Building the Checkbox Selector**
+
+**Goal:** Create the new user interface on the frontend for selecting prompts.
+
+*   **Action:**
+    1.  Modify `client/src/components/InvoiceUpload.js`.
+    2.  Define a constant array within the component or a separate config file to hold the strings of all available prompts (e.g., `['Invoice Number', 'Invoice Date', ...]`).
+    3.  Use this array to dynamically render a list of HTML checkboxes, allowing the user to see and select the prompts.
+
+*   **Testing:**
+    1.  Start the frontend application (`npm start` in the `client` directory).
+    2.  **Success Criteria:** The web page loads and displays a list of checkboxes with the correct labels. The checkboxes should be interactive (clickable). The upload functionality will not be connected yet.
+
+---
+
+### **Stage 4: Frontend Logic - Connecting the UI to the Backend**
+
+**Goal:** Wire up the new checkbox UI to the backend API.
+
+*   **Action:**
+    1.  In `client/src/components/InvoiceUpload.js`, update the `handleUpload` (or equivalent) function.
+    2.  The function will need to identify which checkboxes are currently checked.
+    3.  It will create an array of strings from the labels of the selected checkboxes.
+    4.  It will append this array to the `FormData` object being sent to the backend, using the `prompts[]` key format.
+
+*   **Testing (First End-to-End Test):**
+    1.  Refresh the application in the browser.
+    2.  Select two or three checkboxes.
+    3.  Select a PDF file to upload.
+    4.  Click the "Upload & Process" button.
+    5.  **Success Criteria:** The process completes without error, and a new invoice record is created in the database containing only the data for the fields corresponding to the checked boxes.
+
+---
+
+### **Stage 5: Frontend - Displaying and Editing Dynamic Data**
+
+**Goal:** Update the UI to display and allow editing of the dynamically structured data.
+
+*   **Action:**
+    1.  Refactor the main invoice list component (`App.js`) and the `InvoiceDetailPanel.js` component.
+    2.  The rendering logic will need to be changed to iterate over the `invoice.details` map's key-value pairs instead of accessing fixed properties.
+    3.  Update `EditableDetailItem.js` and the associated save logic in `InvoiceDetailPanel.js`. The `onSave` function must now update a specific key within the `details` map.
+
+*   **Testing (Final End-to-End Test):**
+    1.  After successfully uploading an invoice in the previous stage, verify the extracted data appears correctly in the main table.
+    2.  Click the view/edit icon for an invoice.
+    3.  **Success Criteria:** The detail panel opens, showing the PDF and the dynamically rendered list of extracted fields. You can edit a value, click "Save," and upon reloading the page, the change persists in the database and is reflected in the UI. 

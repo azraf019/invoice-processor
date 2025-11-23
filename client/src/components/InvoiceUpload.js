@@ -1,21 +1,43 @@
 // client/src/components/InvoiceUpload.js
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Loader from './Loader';
 import InvoiceDetailPanel from './InvoiceDetailPanel';
-import { FileTextIcon, UploadCloudIcon, EyeIcon } from './icons';
+import { FileTextIcon, UploadCloudIcon, EyeIcon, XIcon } from './icons';
+
+// This list becomes the single source of truth for all available extraction fields.
+const availablePrompts = [
+  "Invoice Number",
+  "Invoice Date",
+  "Due Date",
+  "Billed To",
+  "From",
+  "Total Amount",
+  "Payment Terms",
+  "Items" // Example of adding a new potential field
+];
 
 // Refactored: Only main InvoiceUpload component remains here. All subcomponents are imported.
 const InvoiceUpload = () => {
     const [invoices, setInvoices] = useState([]);
     const [newlyUploadedInvoices, setNewlyUploadedInvoices] = useState([]);
-    const [files, setFiles] = useState(null);
-    const [prompt, setPrompt] = useState('Extract invoiceNumber, invoiceDate, supplierName, totalAmount, paymentTerms, and deliveryDate.');
+    const [files, setFiles] = useState([]); // Changed to array to allow removal
+    // The old 'prompt' string state is replaced by an object to track checkbox states.
+    const [selectedPrompts, setSelectedPrompts] = useState(
+      availablePrompts.reduce((acc, prompt) => ({ ...acc, [prompt]: true }), {})
+    );
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
+    const [isDragging, setIsDragging] = useState(false); // For drag-and-drop UI
+
+    // --- PAGINATION & SORTING STATE ---
+    const [currentPage, setCurrentPage] = useState(1);
+    const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
+    const ITEMS_PER_PAGE = 10;
+
 
     useEffect(() => { fetchInvoices(); }, []);
 
@@ -29,12 +51,70 @@ const InvoiceUpload = () => {
         }
     };
 
-    const handleFilesChange = (e) => setFiles(e.target.files);
-    const handlePromptChange = (e) => setPrompt(e.target.value);
+    const handleFileSelect = (selectedFiles) => {
+      const newFiles = Array.from(selectedFiles).filter(
+        (file) => !files.some((existingFile) => existingFile.name === file.name)
+      );
+      setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+    };
+
+    const handleFilesChange = (e) => {
+      if (e.target.files) {
+        handleFileSelect(e.target.files);
+      }
+    };
+
+    const removeFile = (fileName) => {
+      setFiles(files.filter(file => file.name !== fileName));
+    };
+    
+    // New handler for managing checkbox state changes.
+    const handlePromptCheckboxChange = (e) => {
+      const { name, checked } = e.target;
+      setSelectedPrompts(prev => ({ ...prev, [name]: checked }));
+    };
+
+    const selectAllPrompts = (isSelected) => {
+      setSelectedPrompts(
+        availablePrompts.reduce((acc, prompt) => ({ ...acc, [prompt]: isSelected }), {})
+      );
+    };
+
+    // --- Drag and Drop Handlers ---
+    const handleDragEnter = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(true);
+    }, []);
+
+    const handleDragLeave = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+    }, []);
+
+    const handleDragOver = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    }, []);
+
+    const handleDrop = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleFileSelect(e.dataTransfer.files);
+        e.dataTransfer.clearData();
+      }
+    }, [files]); // Dependency on files to ensure handleFileSelect has the latest state
 
     const handleUpload = async () => {
-        if (!files || files.length === 0 || !prompt) {
-            setError('Please select one or more PDF files and enter a prompt.');
+        // 1. Get an array of the selected prompt names.
+        const activePrompts = Object.keys(selectedPrompts).filter(prompt => selectedPrompts[prompt]);
+
+        // 2. Update validation logic.
+        if (files.length === 0 || activePrompts.length === 0) {
+            setError('Please select one or more PDF files and at least one field to extract.');
             return;
         }
         setIsLoading(true);
@@ -46,7 +126,11 @@ const InvoiceUpload = () => {
         for (let i = 0; i < files.length; i++) {
             formData.append('files', files[i]);
         }
-        formData.append('prompt', prompt);
+        
+        // 3. Append the array of prompts to FormData.
+        activePrompts.forEach(prompt => {
+          formData.append('prompts[]', prompt);
+        });
 
         try {
             const response = await axios.post('/api/bulk-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -61,14 +145,45 @@ const InvoiceUpload = () => {
         }
     };
 
+    // --- REFACTORED LOGIC ---
+    // This logic is now broken into two separate, memoized calculations
+    // for better performance and correctness.
+
+    // 1. Memoize the sorted list of all invoices.
+    const sortedInvoices = React.useMemo(() => {
+        let sortableItems = [...invoices];
+        sortableItems.sort((a, b) => {
+            // Robustly get values, defaulting to null if not present
+            const aVal = a.details?.[sortConfig.key] ?? a[sortConfig.key] ?? null;
+            const bVal = b.details?.[sortConfig.key] ?? b[sortConfig.key] ?? null;
+
+            // Handle nulls by pushing them to the bottom
+            if (aVal === null) return 1;
+            if (bVal === null) return -1;
+            
+            if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        return sortableItems;
+    }, [invoices, sortConfig]);
+
+    // 2. Paginate the sorted list for display.
+    const paginatedInvoices = React.useMemo(() => {
+        const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+        return sortedInvoices.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+    }, [sortedInvoices, currentPage]);
+
+
     const handleSaveInvoice = async (updatedInvoice) => {
         try {
             await axios.put(`/api/${updatedInvoice._id}`, updatedInvoice);
             setMessage('Invoice updated successfully!');
             fetchInvoices(); // Refresh the invoices list
-            setSelectedInvoice(null); // Close the panel
+            // Do not close the panel, allow the new save feedback to be visible
         } catch (err) {
             setError(err.response?.data?.message || 'An error occurred while saving.');
+            throw err; // Re-throw error to be caught in the panel
         }
     };
 
@@ -88,56 +203,103 @@ const InvoiceUpload = () => {
         }
     };
 
-    const renderInvoiceTable = (invoiceList, title, { isNew = false, showExport = false } = {}) => (
-      <div className={`max-w-7xl mx-auto mt-12 ${isNew ? 'mb-8' : ''}`}>
-          <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-slate-800">{title} {isNew && '✨'}</h2>
-              {showExport && (
-                  <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300 shadow-md">
-                      Export to Excel
-                  </button>
-              )}
+    const requestSort = (key) => {
+      let direction = 'asc';
+      if (sortConfig.key === key && sortConfig.direction === 'asc') {
+        direction = 'desc';
+      }
+      setSortConfig({ key, direction });
+    };
+
+    const renderInvoiceTable = ({
+      invoiceList,
+      title,
+      isNew = false,
+      showExport = false,
+      totalItemCount = 0,
+    }) => {
+      // --- FINAL FIX: Use fixed headers based on all available prompts ---
+      const columns = availablePrompts;
+      const totalCount = totalItemCount || invoiceList.length;
+
+      // Don't render the table at all if there are no columns and no items,
+      // which can happen on the very first render.
+      if (invoiceList.length === 0 && !isNew) {
+        return (
+          <div className="max-w-7xl mx-auto mt-12">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-slate-800">{title}</h2>
+              {showExport && <button onClick={handleExport} className="opacity-50 cursor-not-allowed flex items-center gap-2 bg-green-600 text-white py-2 px-4 rounded-lg shadow-md">Export to Excel</button>}
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+              <p className="text-center py-10 text-slate-500">No invoices processed yet.</p>
+            </div>
           </div>
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                      <thead className="bg-slate-100">
-                          <tr>
-                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Invoice Number</th>
-                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Invoice Date</th>
-                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Supplier Name</th>
-                              <th className="py-3 px-4 text-right font-semibold text-slate-600">Total Amount</th>
-                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Payment Terms</th>
-                              <th className="py-3 px-4 text-left font-semibold text-slate-600">Delivery Date</th>
-                              <th className="py-3 px-4 text-center font-semibold text-slate-600">Actions</th>
-                          </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                          {invoiceList.length > 0 ? (
-                              invoiceList.map((invoice) => (
-                                  <tr key={isNew ? `new-${invoice._id}` : invoice._id} className="hover:bg-sky-50/50">
-                                      <td className="py-3 px-4 text-slate-700 font-medium">{invoice.invoiceNumber || 'N/A'}</td>
-                                      <td className="py-3 px-4 text-slate-500">{invoice.invoiceDate || 'N/A'}</td>
-                                      <td className="py-3 px-4 text-slate-700">{invoice.supplierName || 'N/A'}</td>
-                                      <td className="py-3 px-4 text-right text-slate-700 font-semibold">{invoice.totalAmount != null ? `$${invoice.totalAmount.toFixed(2)}` : 'N/A'}</td>
-                                      <td className="py-3 px-4 text-slate-500 truncate max-w-xs">{invoice.paymentTerms || 'N/A'}</td>
-                                      <td className="py-3 px-4 text-slate-500">{invoice.deliveryDate || 'N/A'}</td>
-                                      <td className="py-3 px-4 text-center">
-                                          <button onClick={() => setSelectedInvoice(invoice)} className="text-sky-600 hover:text-sky-800 p-1 rounded-md hover:bg-sky-100">
-                                              <EyeIcon className="w-5 h-5" />
-                                          </button>
-                                      </td>
-                                  </tr>
-                              ))
-                          ) : (
-                              <tr><td colSpan="7" className="text-center py-10 text-slate-500">No invoices processed yet.</td></tr>
-                          )}
-                      </tbody>
-                  </table>
-              </div>
-          </div>
-      </div>
-  );
+        );
+      }
+
+      return (
+        <div className={`max-w-7xl mx-auto mt-12 ${isNew ? 'mb-8' : ''}`}>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-slate-800">{title} {isNew && '✨'}</h2>
+                {showExport && (
+                    <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300 shadow-md">
+                        Export to Excel
+                    </button>
+                )}
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                        <thead className="bg-slate-100">
+                            <tr>
+                                {columns.map(col => (
+                                  <th key={col} className="py-3 px-4 text-left font-semibold text-slate-600 cursor-pointer" onClick={() => requestSort(col)}>
+                                    {col}
+                                    {sortConfig.key === col && (sortConfig.direction === 'asc' ? ' ▲' : ' ▼')}
+                                  </th>
+                                ))}
+                                <th className="py-3 px-4 text-center font-semibold text-slate-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                            {invoiceList.length > 0 ? (
+                                invoiceList.map((invoice) => (
+                                    <tr key={isNew ? `new-${invoice._id}` : invoice._id} className="hover:bg-sky-50/50">
+                                        {columns.map(col => (
+                                            <td key={col} className="py-3 px-4 text-slate-600">
+                                                {invoice.details?.[col] || 'N/A'}
+                                            </td>
+                                        ))}
+                                        <td className="py-3 px-4 text-center">
+                                            <button onClick={() => setSelectedInvoice(invoice)} className="text-sky-600 hover:text-sky-800 p-1 rounded-md hover:bg-sky-100">
+                                                <EyeIcon className="w-5 h-5" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr><td colSpan={columns.length + 1} className="text-center py-10 text-slate-500">No invoices processed yet.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                {/* --- PAGINATION CONTROLS --- */}
+                {!isNew && totalCount > ITEMS_PER_PAGE && (
+                    <div className="flex justify-between items-center p-4">
+                        <span className="text-sm text-slate-600">
+                            Showing {Math.min(1 + (currentPage - 1) * ITEMS_PER_PAGE, totalCount)} to {Math.min(currentPage * ITEMS_PER_PAGE, totalCount)} of {totalCount}
+                        </span>
+                        <div className="flex gap-2">
+                            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1 text-sm rounded-md bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50">Previous</button>
+                            <button onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalCount / ITEMS_PER_PAGE), p + 1))} disabled={currentPage * ITEMS_PER_PAGE >= totalCount} className="px-3 py-1 text-sm rounded-md bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50">Next</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+      );
+    };
 
     return (
         <div className="space-y-12 px-4">
@@ -149,20 +311,68 @@ const InvoiceUpload = () => {
             />
 
             <div className="max-w-3xl mx-auto">
-                <div className="bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
+                <div 
+                  className={`bg-white p-8 rounded-2xl shadow-lg border transition-all duration-300 ${isDragging ? 'border-indigo-600 ring-4 ring-indigo-200' : 'border-slate-200'}`}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                >
                     <div className="flex items-center gap-3">
                         <div className="bg-indigo-100 text-indigo-600 p-2 rounded-lg"><FileTextIcon className="w-6 h-6" /></div>
                         <h2 className="text-2xl font-bold text-slate-800">Invoice Upload</h2>
                     </div>
-                    <p className="text-slate-500 mt-2">Upload one or more PDF files for processing.</p>
+                    <p className="text-slate-500 mt-2">Drag & drop your PDF files here or click to browse.</p>
                     <div className="mt-6 space-y-6">
+                        {/* --- FILE INPUT & DROP ZONE --- */}
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">PDF File(s)</label>
-                            <input type="file" onChange={handleFilesChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-colors duration-200" multiple />
+                            <label htmlFor="file-upload" className="relative cursor-pointer block w-full border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:border-indigo-400 transition-colors duration-200">
+                                <UploadCloudIcon className="w-8 h-8 mx-auto text-slate-400" />
+                                <span className="mt-2 block text-sm font-semibold text-slate-600">
+                                    {isDragging ? 'Drop files here!' : 'Click to upload files'}
+                                </span>
+                            </label>
+                            <input id="file-upload" type="file" onChange={handleFilesChange} className="sr-only" multiple accept="application/pdf" />
                         </div>
+                        {/* --- FILE PREVIEW LIST --- */}
+                        {files.length > 0 && (
+                          <div className="space-y-2">
+                            <h3 className="text-sm font-medium text-slate-700">Selected Files:</h3>
+                            <ul className="space-y-2">
+                              {files.map(file => (
+                                <li key={file.name} className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                  <span className="text-sm text-slate-800 truncate">{file.name}</span>
+                                  <button onClick={() => removeFile(file.name)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-100 rounded-full">
+                                    <XIcon className="w-4 h-4" />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {/* --- PROMPT CHECKBOXES --- */}
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Extraction Prompt</label>
-                            <textarea value={prompt} onChange={handlePromptChange} rows="3" className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" />
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-medium text-slate-700">Fields to Extract</label>
+                            <div className="space-x-4">
+                              <button onClick={() => selectAllPrompts(true)} className="text-sm font-semibold text-indigo-600 hover:text-indigo-800">Select All</button>
+                              <button onClick={() => selectAllPrompts(false)} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Deselect All</button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2">
+                            {availablePrompts.map((promptName) => (
+                              <label key={promptName} className="flex items-center space-x-2 text-slate-600">
+                                <input
+                                  type="checkbox"
+                                  name={promptName}
+                                  checked={selectedPrompts[promptName] || false}
+                                  onChange={handlePromptCheckboxChange}
+                                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span>{promptName}</span>
+                              </label>
+                            ))}
+                          </div>
                         </div>
                         <button onClick={handleUpload} disabled={isLoading} className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-300 transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
                             <UploadCloudIcon className="w-5 h-5" />
@@ -177,9 +387,14 @@ const InvoiceUpload = () => {
                 {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-r-lg" role="alert"><p className="font-bold">Error</p><p>{error}</p></div>}
             </div>
 
-            {newlyUploadedInvoices.length > 0 && renderInvoiceTable(newlyUploadedInvoices, "Last Uploaded Invoices", { isNew: true })}
+            {newlyUploadedInvoices.length > 0 && renderInvoiceTable({ invoiceList: newlyUploadedInvoices, title: "Last Uploaded Invoices", isNew: true })}
             
-            {renderInvoiceTable(invoices, "All Processed Invoices", { showExport: true })}
+            {renderInvoiceTable({ 
+                invoiceList: paginatedInvoices, 
+                title: "All Processed Invoices", 
+                showExport: true, 
+                totalItemCount: invoices.length,
+            })}
         </div>
     );
 };

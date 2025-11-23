@@ -2,15 +2,14 @@
 const mongoose = require('mongoose');
 
 const invoiceSchema = new mongoose.Schema({
-  invoiceNumber: { type: String },
-  invoiceDate: { type: String },
-  supplierName: { type: String },
-  totalAmount: { type: Number },
-  paymentTerms: { type: String },
-  deliveryDate: { type: String },
-  // --- NEW FIELD ---
   // Store the filename of the original PDF for later retrieval
   pdfFilename: { type: String, required: true },
+  
+  // A 'details' field to dynamically store key-value pairs.
+  details: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed, // Allows any data type for values
+  },
 }, {
   timestamps: true,
 });

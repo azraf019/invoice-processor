@@ -5,6 +5,17 @@ const invoiceController = require('../controllers/invoiceController');
 const fs = require('fs');
 const path = require('path'); // Make sure path is imported
 
+// --- DIAGNOSTIC MIDDLEWARE ---
+// This will log every request that comes to this router.
+router.use((req, res, next) => {
+  console.log(`--- API ROUTER-LEVEL LOG ---`);
+  console.log(`Time: ${Date.now()}`);
+  console.log(`Request URL: ${req.originalUrl}`);
+  console.log(`Request Type: ${req.method}`);
+  next(); // Pass control to the next handler
+});
+
+
 // Multer storage configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -24,12 +35,15 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Routes for single and bulk PDF uploads
-router.post('/upload', upload.single('pdf'), invoiceController.uploadInvoice);
+// Route for bulk PDF uploads (can also handle single files)
 router.post('/bulk-upload', upload.array('files'), invoiceController.bulkUpload);
 
 router.get('/', invoiceController.getInvoices);
 router.get('/export-excel', invoiceController.exportExcel);
+
+// --- NEW ROUTE ---
+// Route to serve a specific PDF file by invoice ID
+router.get('/pdf/:id', invoiceController.getInvoicePDF);
 
 router.put('/:id', invoiceController.updateInvoice);
 
