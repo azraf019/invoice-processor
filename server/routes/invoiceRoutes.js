@@ -22,8 +22,8 @@ const storage = multer.diskStorage({
     // --- THIS IS THE FIX ---
     // Use an absolute path to ensure consistency.
     const dir = path.join(__dirname, '..', 'uploads');
-    if (!fs.existsSync(dir)){
-        fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
     cb(null, dir);
   },
@@ -44,6 +44,9 @@ router.get('/export-excel', invoiceController.exportExcel);
 // --- NEW ROUTE ---
 // Route to serve a specific PDF file by invoice ID
 router.get('/pdf/:id', invoiceController.getInvoicePDF);
+
+// Route to manually upload to DMS
+router.post('/dms/:id', invoiceController.uploadToDMS);
 
 router.put('/:id', invoiceController.updateInvoice);
 
