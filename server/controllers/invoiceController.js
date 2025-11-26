@@ -173,7 +173,8 @@ exports.exportExcel = async (req, res, next) => {
     const allKeys = new Set();
     invoices.forEach(invoice => {
       if (invoice.details) {
-        Object.keys(invoice.details).forEach(key => allKeys.add(key));
+        const detailsObj = Object.fromEntries(invoice.details);
+        Object.keys(detailsObj).forEach(key => allKeys.add(key));
       }
     });
     const headers = Array.from(allKeys);
@@ -181,8 +182,11 @@ exports.exportExcel = async (req, res, next) => {
     // 2. Create data rows based on the collected keys.
     const data = invoices.map(invoice => {
       const row = {};
+      // Convert the Map to a plain object
+      const detailsObj = invoice.details ? Object.fromEntries(invoice.details) : {};
+
       headers.forEach(header => {
-        row[header] = invoice.details ? invoice.details[header] : '';
+        row[header] = detailsObj[header] || '';
       });
       return row;
     });
