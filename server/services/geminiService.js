@@ -72,3 +72,35 @@ exports.processPDF = async (pdfPath, prompts) => {
     throw new Error('Error processing PDF with Gemini API: ' + error.message);
   }
 };
+
+exports.identifyInvoiceRanges = async (pdfPath) => {
+  try {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    // Use a model that supports vision/multimodal inputs.
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    const pdfBuffer = fs.readFileSync(pdfPath);
+    const pdfBase64 = pdfBuffer.toString('base64');
+
+    const prompt = `This PDF contains multiple distinct invoices. Please identify the start and end page numbers for each individual invoice. Return the result strictly as a JSON array of objects, e.g., [{"start": 1, "end": 2}, {"start": 3, "end": 3}]. Do not include any markdown formatting or explanations.`;
+
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          data: pdfBase64,
+          mimeType: 'application/pdf',
+        },
+      },
+      { text: prompt },
+    ]);
+
+    let responseText = result.response.text();
+    // Clean up potential markdown code blocks
+    responseText = responseText.replace(/```json\n|```/g, '').trim();
+
+    const ranges = JSON.parse(responseText);
+    return ranges;
+  } catch (error) {
+    throw new Error('Error identifying invoice ranges with Gemini API: ' + error.message);
+  }
+};

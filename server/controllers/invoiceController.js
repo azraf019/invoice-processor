@@ -2,8 +2,7 @@
 
 const { processPDF } = require('../services/geminiService');
 const Invoice = require('../models/Invoice');
-const xlsx = require('xlsx');
-const fs = require('fs');
+const fs = require('fs'); // Import the fs module
 const path = require('path'); // Import the path module
 const dmsService = require('../services/dmsService');
 
@@ -105,8 +104,12 @@ exports.uploadToDMS = async (req, res, next) => {
     const success = await dmsService.uploadToDMS(fullPath, invoice.pdfFilename, metaObj);
 
     if (success) {
+      invoice.dmsStatus = 'Uploaded';
+      await invoice.save();
       res.status(200).json({ message: 'Successfully uploaded to DMS.' });
     } else {
+      invoice.dmsStatus = 'Failed';
+      await invoice.save();
       res.status(500).json({ message: 'Failed to upload to DMS. Check server logs.' });
     }
   } catch (error) {
@@ -155,7 +158,9 @@ exports.getInvoices = async (req, res, next) => {
         pdfFilename: invoice.pdfFilename,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
-        details: invoice.details ? Object.fromEntries(invoice.details) : {}
+        updatedAt: invoice.updatedAt,
+        details: invoice.details ? Object.fromEntries(invoice.details) : {},
+        dmsStatus: invoice.dmsStatus || 'Pending'
       };
     });
     res.json(plainInvoices);

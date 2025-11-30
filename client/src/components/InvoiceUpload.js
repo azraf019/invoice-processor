@@ -1,9 +1,7 @@
-// client/src/components/InvoiceUpload.js
-
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Loader from './Loader';
-import InvoiceDetailPanel from './InvoiceDetailPanel';
+import InvoiceDetailPanel from './InvoiceDetailPanel/InvoiceDetailPanel';
 import { FileTextIcon, UploadCloudIcon, EyeIcon, XIcon } from './icons';
 
 // This list becomes the single source of truth for all available extraction fields.
@@ -21,8 +19,7 @@ const availablePrompts = [
   "Payment Term"
 ];
 
-// Refactored: Only main InvoiceUpload component remains here. All subcomponents are imported.
-const InvoiceUpload = () => {
+const InvoiceUpload = ({ isActive }) => {
   const [invoices, setInvoices] = useState([]);
   const [newlyUploadedInvoices, setNewlyUploadedInvoices] = useState([]);
   const [files, setFiles] = useState([]); // Changed to array to allow removal
@@ -40,9 +37,19 @@ const InvoiceUpload = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   const ITEMS_PER_PAGE = 10;
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
 
 
-  useEffect(() => { fetchInvoices(); }, []);
+  useEffect(() => {
+    if (isActive) {
+      fetchInvoices();
+    }
+  }, [isActive]);
+
+  // Initial fetch on mount as well
+  useEffect(() => {
+    fetchInvoices();
+  }, []);
 
   const fetchInvoices = async () => {
     try {
@@ -214,6 +221,47 @@ const InvoiceUpload = () => {
     setSortConfig({ key, direction });
   };
 
+  const handleBulkDMSUpload = async () => {
+    setIsBulkUploading(true);
+    setMessage('Starting bulk DMS upload...');
+
+    // Iterate through all invoices (using the full list, not just paginated)
+    for (let i = 0; i < invoices.length; i++) {
+      const invoice = invoices[i];
+
+      // Skip if already uploaded
+      if (invoice.dmsStatus === 'Uploaded') continue;
+
+      try {
+        // Update UI to show current item being processed
+        setMessage(`Uploading invoice ${i + 1} of ${invoices.length}...`);
+
+        await axios.post(`/api/dms/${invoice._id}`);
+
+        // Update local state to reflect success immediately
+        setInvoices(prev => prev.map(inv =>
+          inv._id === invoice._id ? { ...inv, dmsStatus: 'Uploaded' } : inv
+        ));
+
+      } catch (err) {
+        console.error(`Failed to upload invoice ${invoice._id}`, err);
+        // Update local state to reflect failure
+        setInvoices(prev => prev.map(inv =>
+          inv._id === invoice._id ? { ...inv, dmsStatus: 'Failed' } : inv
+        ));
+      }
+
+      // Wait for 3 seconds before next request
+      if (i < invoices.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+
+    setIsBulkUploading(false);
+    setMessage('Bulk DMS upload completed.');
+    fetchInvoices(); // Final refresh to ensure consistency
+  };
+
   const renderInvoiceTable = ({
     invoiceList,
     title,
@@ -245,24 +293,36 @@ const InvoiceUpload = () => {
       <div className={`max-w-7xl mx-auto mt-12 ${isNew ? 'mb-8' : ''}`}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-slate-800">{title} {isNew && '✨'}</h2>
-          {showExport && (
-            <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300 shadow-md">
-              Export to Excel
-            </button>
-          )}
+          <div className="flex gap-4">
+            {showExport && (
+              <>
+                <button
+                  onClick={handleBulkDMSUpload}
+                  disabled={isBulkUploading}
+                  className={`flex items-center gap-2 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md ${isBulkUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isBulkUploading ? 'Uploading...' : 'Bulk Upload DMS'}
+                </button>
+                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300 shadow-md">
+                  Export to Excel
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className="min-w-full text-sm table-fixed">
               <thead className="bg-slate-100">
                 <tr>
                   {columns.map(col => (
-                    <th key={col} className="py-3 px-4 text-left font-semibold text-slate-600 cursor-pointer" onClick={() => requestSort(col)}>
+                    <th key={col} className="py-3 px-2 text-left font-semibold text-slate-600 cursor-pointer break-words" onClick={() => requestSort(col)}>
                       {col}
                       {sortConfig.key === col && (sortConfig.direction === 'asc' ? ' ▲' : ' ▼')}
                     </th>
                   ))}
-                  <th className="py-3 px-4 text-center font-semibold text-slate-600">Actions</th>
+                  <th className="py-3 px-2 text-center font-semibold text-slate-600 w-24">DMS Status</th>
+                  <th className="py-3 px-2 text-center font-semibold text-slate-600 w-20">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -270,11 +330,19 @@ const InvoiceUpload = () => {
                   invoiceList.map((invoice) => (
                     <tr key={isNew ? `new-${invoice._id}` : invoice._id} className="hover:bg-sky-50/50">
                       {columns.map(col => (
-                        <td key={col} className="py-3 px-4 text-slate-600">
+                        <td key={col} className="py-3 px-2 text-slate-600 break-words">
                           {invoice.details?.[col] || 'N/A'}
                         </td>
                       ))}
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3 px-2 text-center">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${invoice.dmsStatus === 'Uploaded' ? 'bg-green-100 text-green-800' :
+                          invoice.dmsStatus === 'Failed' ? 'bg-red-100 text-red-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                          {invoice.dmsStatus || 'Pending'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-center">
                         <button onClick={() => setSelectedInvoice(invoice)} className="text-sky-600 hover:text-sky-800 p-1 rounded-md hover:bg-sky-100">
                           <EyeIcon className="w-5 h-5" />
                         </button>
@@ -282,7 +350,7 @@ const InvoiceUpload = () => {
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan={columns.length + 1} className="text-center py-10 text-slate-500">No invoices processed yet.</td></tr>
+                  <tr><td colSpan={columns.length + 2} className="text-center py-10 text-slate-500">No invoices processed yet.</td></tr>
                 )}
               </tbody>
             </table>

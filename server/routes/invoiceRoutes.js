@@ -5,6 +5,8 @@ const invoiceController = require('../controllers/invoiceController');
 const fs = require('fs');
 const path = require('path'); // Make sure path is imported
 
+const bulkController = require('../controllers/bulkController'); // Import bulkController
+
 // --- DIAGNOSTIC MIDDLEWARE ---
 // This will log every request that comes to this router.
 router.use((req, res, next) => {
@@ -38,12 +40,18 @@ const upload = multer({ storage });
 // Route for bulk PDF uploads (can also handle single files)
 router.post('/bulk-upload', upload.array('files'), invoiceController.bulkUpload);
 
-router.get('/', invoiceController.getInvoices);
+// --- BULK SPLIT ROUTES ---
+router.post('/bulk-split-upload', upload.single('file'), bulkController.splitAndProcess);
+router.get('/bulk-split-invoices', bulkController.getBulkSplitInvoices);
+
+router.put('/:id', invoiceController.updateInvoice);
 router.get('/export-excel', invoiceController.exportExcel);
 
 // --- NEW ROUTE ---
 // Route to serve a specific PDF file by invoice ID
 router.get('/pdf/:id', invoiceController.getInvoicePDF);
+
+router.get('/', invoiceController.getInvoices);
 
 // Route to manually upload to DMS
 router.post('/dms/:id', invoiceController.uploadToDMS);
