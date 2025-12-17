@@ -60,6 +60,9 @@ exports.splitAndProcess = async (req, res, next) => {
         const allInvoicesData = [];
         for (const file of splitFiles) {
             try {
+                // Add a delay to avoid hitting rate limits (e.g., 2 seconds)
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
                 const extractedData = await processPDF(file.path, prompts);
                 allInvoicesData.push({
                     pdfFilename: file.filename,

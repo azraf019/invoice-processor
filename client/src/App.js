@@ -5,6 +5,8 @@ import './App.css';
 import InvoiceUpload from './components/InvoiceUpload';
 import BulkSplitUpload from './components/BulkSplitUpload';
 
+import logo from './assets/logo.jpg';
+
 function App() {
   const [activeTab, setActiveTab] = React.useState(() => {
     return localStorage.getItem('activeTab') || 'standard';
@@ -16,7 +18,8 @@ function App() {
 
   return (
     <div className="App bg-slate-50 min-h-screen font-sans">
-      <header className="py-10">
+      <header className="py-10 relative">
+        <img src={logo} alt="Logo" className="absolute top-12 left-5 h-10" />
         <div className="text-center">
           <h1 className="text-5xl font-extrabold tracking-tight text-slate-900">
             Invoice<span className="bg-gradient-to-r from-sky-500 to-indigo-500 text-transparent bg-clip-text">AI</span> Processor

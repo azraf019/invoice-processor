@@ -10,6 +10,24 @@ const getExpectedType = (prompt) => {
   return 'string';
 };
 
+// Helper function to call Gemini API with retry logic
+const callGeminiWithRetry = async (model, content, retries = 5, initialDelay = 5000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await model.generateContent(content);
+    } catch (error) {
+      if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
+        if (i === retries - 1) throw error; // Throw on last retry
+        const delay = initialDelay * Math.pow(2, i); // Exponential backoff: 2s, 4s, 8s
+        console.warn(`Gemini API 429 error. Retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw error; // Throw other errors immediately
+      }
+    }
+  }
+};
+
 exports.processPDF = async (pdfPath, prompts) => {
   try {
     // Initialize Gemini API with API key from .env
@@ -18,7 +36,7 @@ exports.processPDF = async (pdfPath, prompts) => {
     // If gemini-2.0-flash was intended, ensure it's available. Falling back to 1.5-flash is safer if unsure, 
     // but I will stick to the user's previous model config if it was working, or use a known good one.
     // The previous file had 'gemini-2.0-flash', I will keep it but add a fallback comment.
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     // Read PDF file and convert to base64
     const pdfBuffer = fs.readFileSync(pdfPath);
@@ -46,7 +64,7 @@ exports.processPDF = async (pdfPath, prompts) => {
     `;
 
     // Send request to Gemini API with inline PDF data
-    const result = await model.generateContent([
+    const result = await callGeminiWithRetry(model, [
       {
         inlineData: {
           data: pdfBase64,
@@ -77,14 +95,14 @@ exports.identifyInvoiceRanges = async (pdfPath) => {
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     // Use a model that supports vision/multimodal inputs.
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const pdfBuffer = fs.readFileSync(pdfPath);
     const pdfBase64 = pdfBuffer.toString('base64');
 
     const prompt = `This PDF contains multiple distinct invoices. Please identify the start and end page numbers for each individual invoice. Return the result strictly as a JSON array of objects, e.g., [{"start": 1, "end": 2}, {"start": 3, "end": 3}]. Do not include any markdown formatting or explanations.`;
 
-    const result = await model.generateContent([
+    const result = await callGeminiWithRetry(model, [
       {
         inlineData: {
           data: pdfBase64,
