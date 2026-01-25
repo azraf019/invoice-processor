@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { connectDB } = require('./config/db');
 const invoiceRoutes = require('./routes/invoiceRoutes');
+const bulkRoutes = require('./routes/bulkRoutes');
 const errorHandler = require('./middleware/errorHandler');
 const path = require('path'); // --- FIX: Import the 'path' module ---
 require('dotenv').config();
@@ -22,6 +23,7 @@ connectDB();
 
 // Routes
 app.use('/api', invoiceRoutes);
+app.use('/api/bulk', bulkRoutes);
 
 // Error Handling
 app.use(errorHandler);

@@ -1,10 +1,10 @@
 // server/controllers/invoiceController.js
 
-const { processPDF } = require('../services/pdfProcessorService');
+const { processPDF } = require('../services/geminiService');
 const Invoice = require('../models/Invoice');
-const xlsx = require('xlsx');
-const fs = require('fs');
+const fs = require('fs'); // Import the fs module
 const path = require('path'); // Import the path module
+const dmsService = require('../services/dmsService');
 
 // ... (getInvoices, exportExcel, clearInvoices functions remain the same) ...
 
@@ -25,7 +25,7 @@ exports.bulkUpload = async (req, res, next) => {
     for (const file of req.files) {
       try {
         const extractedData = await processPDF(file.path, prompts);
-        
+
         // Prepare data for the new schema
         allInvoicesData.push({
           pdfFilename: file.filename,
@@ -63,58 +63,88 @@ exports.bulkUpload = async (req, res, next) => {
 
 exports.updateInvoice = async (req, res, next) => {
   try {
-      const { id } = req.params;
-      // The body will now contain the entire 'details' object
-      const { details } = req.body;
+    const { id } = req.params;
+    // The body will now contain the entire 'details' object
+    const { details } = req.body;
 
-      // Find the invoice first
-      const invoice = await Invoice.findById(id);
-      if (!invoice) {
-          return res.status(404).json({ message: 'Invoice not found' });
-      }
+    // Find the invoice first
+    const invoice = await Invoice.findById(id);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
 
-      // Overwrite the details map.
-      // For more granular updates, a different approach would be needed,
-      // but for this app's flow, replacing the whole map is robust.
-      invoice.details = details;
-      
-      const updatedInvoice = await invoice.save();
+    // Overwrite the details map.
+    // For more granular updates, a different approach would be needed,
+    // but for this app's flow, replacing the whole map is robust.
+    invoice.details = details;
 
-      res.status(200).json({ message: 'Invoice updated successfully', data: updatedInvoice.toObject() });
+    const updatedInvoice = await invoice.save();
+
+    res.status(200).json({ message: 'Invoice updated successfully', data: updatedInvoice.toObject() });
   } catch (error) {
-      next(error);
+    next(error);
   }
 };
 
 // --- NEW FUNCTION ---
+exports.uploadToDMS = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const invoice = await Invoice.findById(id);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    const fullPath = path.join(__dirname, '..', 'uploads', invoice.pdfFilename);
+    if (!fs.existsSync(fullPath)) {
+      return res.status(404).json({ message: 'PDF file not found on server.' });
+    }
+
+    const metaObj = invoice.details ? Object.fromEntries(invoice.details) : {};
+    const success = await dmsService.uploadToDMS(fullPath, invoice.pdfFilename, metaObj);
+
+    if (success) {
+      invoice.dmsStatus = 'Uploaded';
+      await invoice.save();
+      res.status(200).json({ message: 'Successfully uploaded to DMS.' });
+    } else {
+      invoice.dmsStatus = 'Failed';
+      await invoice.save();
+      res.status(500).json({ message: 'Failed to upload to DMS. Check server logs.' });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * Serves the PDF file associated with an invoice.
  */
 exports.getInvoicePDF = async (req, res, next) => {
-    try {
-        console.log(`--- DEBUG: getInvoicePDF called with id: ${req.params.id} ---`);
-        const invoice = await Invoice.findById(req.params.id);
+  try {
+    console.log(`--- DEBUG: getInvoicePDF called with id: ${req.params.id} ---`);
+    const invoice = await Invoice.findById(req.params.id);
 
-        if (!invoice || !invoice.pdfFilename) {
-            console.log(`--- DEBUG: Invoice not found or pdfFilename missing. ---`);
-            return res.status(404).json({ message: 'Invoice or PDF not found.' });
-        }
-        
-        console.log(`--- DEBUG: Found invoice. pdfFilename: ${invoice.pdfFilename} ---`);
-        const pdfPath = path.join(__dirname, '..', 'uploads', invoice.pdfFilename);
-        console.log(`--- DEBUG: Constructed pdfPath: ${pdfPath} ---`);
-
-        if (fs.existsSync(pdfPath)) {
-            console.log(`--- DEBUG: File exists. Sending file. ---`);
-            res.sendFile(pdfPath);
-        } else {
-            console.log(`--- DEBUG: File does NOT exist at path. ---`);
-            return res.status(404).json({ message: 'PDF file not found on server.' });
-        }
-    } catch (error) {
-        console.error(`--- DEBUG: Error in getInvoicePDF: ${error.message} ---`);
-        next(error);
+    if (!invoice || !invoice.pdfFilename) {
+      console.log(`--- DEBUG: Invoice not found or pdfFilename missing. ---`);
+      return res.status(404).json({ message: 'Invoice or PDF not found.' });
     }
+
+    console.log(`--- DEBUG: Found invoice. pdfFilename: ${invoice.pdfFilename} ---`);
+    const pdfPath = path.join(__dirname, '..', 'uploads', invoice.pdfFilename);
+    console.log(`--- DEBUG: Constructed pdfPath: ${pdfPath} ---`);
+
+    if (fs.existsSync(pdfPath)) {
+      console.log(`--- DEBUG: File exists. Sending file. ---`);
+      res.sendFile(pdfPath);
+    } else {
+      console.log(`--- DEBUG: File does NOT exist at path. ---`);
+      return res.status(404).json({ message: 'PDF file not found on server.' });
+    }
+  } catch (error) {
+    console.error(`--- DEBUG: Error in getInvoicePDF: ${error.message} ---`);
+    next(error);
+  }
 };
 
 // Correctly handle the details map when sending response
@@ -128,7 +158,9 @@ exports.getInvoices = async (req, res, next) => {
         pdfFilename: invoice.pdfFilename,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
-        details: invoice.details ? Object.fromEntries(invoice.details) : {}
+        updatedAt: invoice.updatedAt,
+        details: invoice.details ? Object.fromEntries(invoice.details) : {},
+        dmsStatus: invoice.dmsStatus || 'Pending'
       };
     });
     res.json(plainInvoices);
@@ -140,13 +172,14 @@ exports.getInvoices = async (req, res, next) => {
 exports.exportExcel = async (req, res, next) => {
   try {
     const invoices = await Invoice.find();
-    
+
     // Since columns are dynamic, we need to handle them differently.
     // 1. Collect all possible keys from all invoices.
     const allKeys = new Set();
     invoices.forEach(invoice => {
       if (invoice.details) {
-        Object.keys(invoice.details).forEach(key => allKeys.add(key));
+        const detailsObj = Object.fromEntries(invoice.details);
+        Object.keys(detailsObj).forEach(key => allKeys.add(key));
       }
     });
     const headers = Array.from(allKeys);
@@ -154,8 +187,11 @@ exports.exportExcel = async (req, res, next) => {
     // 2. Create data rows based on the collected keys.
     const data = invoices.map(invoice => {
       const row = {};
+      // Convert the Map to a plain object
+      const detailsObj = invoice.details ? Object.fromEntries(invoice.details) : {};
+
       headers.forEach(header => {
-        row[header] = invoice.details ? invoice.details[header] : '';
+        row[header] = detailsObj[header] || '';
       });
       return row;
     });

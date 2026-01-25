@@ -8,11 +8,13 @@ const InvoiceDetailPanel = ({ invoice, onClose, onSave }) => {
     const [saveState, setSaveState] = useState('idle'); // idle, saving, saved
     const [pdfUrl, setPdfUrl] = useState(null); // State to hold the blob URL
     const [pdfError, setPdfError] = useState(null);
+    const [dmsStatus, setDmsStatus] = useState('idle'); // idle, uploading, success, error
 
     useEffect(() => {
         if (invoice) {
             setEditedInvoice(invoice);
             setSaveState('idle'); // Reset save state when a new invoice is opened
+            setDmsStatus('idle');
             setPdfUrl(null); // Clear previous PDF
             setPdfError(null);
 
@@ -67,6 +69,19 @@ const InvoiceDetailPanel = ({ invoice, onClose, onSave }) => {
         }
     };
 
+    const handleDmsUpload = async () => {
+        setDmsStatus('uploading');
+        try {
+            await axios.post(`/api/dms/${invoice._id}`);
+            setDmsStatus('success');
+            setTimeout(() => setDmsStatus('idle'), 3000);
+        } catch (error) {
+            console.error("DMS upload failed:", error);
+            setDmsStatus('error');
+            setTimeout(() => setDmsStatus('idle'), 3000);
+        }
+    };
+
     // Helper to determine input type based on label
     const getInputType = (label) => {
         // Reverted: Always return 'text' to handle inconsistent date formats gracefully.
@@ -84,6 +99,15 @@ const InvoiceDetailPanel = ({ invoice, onClose, onSave }) => {
         }
     };
 
+    const getDmsButtonContent = () => {
+        switch (dmsStatus) {
+            case 'uploading': return 'Sending...';
+            case 'success': return 'Sent! ✔';
+            case 'error': return 'Failed ❌';
+            default: return 'Send to DMS';
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-slate-900 bg-opacity-60 z-40" onClick={onClose}>
             <div className="fixed top-0 right-0 h-full w-[90vw] max-w-[1600px] bg-white shadow-2xl transform transition-transform duration-300 ease-in-out translate-x-0" onClick={(e) => e.stopPropagation()}>
@@ -91,8 +115,18 @@ const InvoiceDetailPanel = ({ invoice, onClose, onSave }) => {
                     <div className="flex justify-between items-center p-4 border-b bg-slate-50">
                         <h2 className="text-xl font-bold text-slate-800">Invoice Details: {editedInvoice?.details?.['Invoice Number'] || ''}</h2>
                         <div className="flex items-center gap-4">
-                            <button 
-                                onClick={handleSave} 
+                            <button
+                                onClick={handleDmsUpload}
+                                disabled={dmsStatus !== 'idle'}
+                                className={`text-white py-2 px-4 rounded-lg transition-colors duration-300 shadow-md ${dmsStatus === 'success' ? 'bg-green-500' :
+                                    dmsStatus === 'error' ? 'bg-red-500' :
+                                        'bg-blue-600 hover:bg-blue-700'
+                                    } ${dmsStatus !== 'idle' ? 'cursor-not-allowed' : ''}`}
+                            >
+                                {getDmsButtonContent()}
+                            </button>
+                            <button
+                                onClick={handleSave}
                                 disabled={saveState !== 'idle'}
                                 className={`text-white py-2 px-4 rounded-lg transition-colors duration-300 shadow-md ${saveState === 'saved' ? 'bg-green-500' : 'bg-indigo-600 hover:bg-indigo-700'} ${saveState !== 'idle' ? 'cursor-not-allowed' : ''}`}
                             >
@@ -140,4 +174,4 @@ const InvoiceDetailPanel = ({ invoice, onClose, onSave }) => {
     );
 };
 
-export default InvoiceDetailPanel; 
+export default InvoiceDetailPanel;
