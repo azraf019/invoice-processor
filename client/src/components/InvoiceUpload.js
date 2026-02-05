@@ -8,12 +8,6 @@ import { FileTextIcon, UploadCloudIcon, EyeIcon, XIcon } from './icons';
 const availablePrompts = [
   "Customer Code",
   "Customer Name",
-  "Customer TRN",
-  "Contact No",
-  "SO No",
-  "SO Date",
-  "Salesman",
-  "Dest Code",
   "Invoice No",
   "Invoice Date",
   "Payment Term"
@@ -38,22 +32,71 @@ const InvoiceUpload = ({ isActive }) => {
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   const ITEMS_PER_PAGE = 10;
   const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [displayPrompts, setDisplayPrompts] = useState(availablePrompts);
 
 
   useEffect(() => {
     if (isActive) {
-      fetchInvoices();
+      fetchInvoices(selectedTemplateId);
     }
-  }, [isActive]);
+  }, [isActive, selectedTemplateId]);
 
   // Initial fetch on mount as well
+  // Initial fetch on mount as well
   useEffect(() => {
-    fetchInvoices();
+    fetchTemplates();
   }, []);
 
-  const fetchInvoices = async () => {
+  const fetchTemplates = async () => {
     try {
-      const response = await axios.get('/api');
+      const res = await axios.get('/api/templates');
+      setTemplates(res.data);
+    } catch (err) {
+      console.error('Error fetching templates:', err);
+    }
+  };
+
+  const handleTemplateChange = (e) => {
+    const templateId = e.target.value;
+    setSelectedTemplateId(templateId);
+
+    if (!templateId) {
+      // Reset to defaults
+      setDisplayPrompts(availablePrompts);
+      // Optional: keep current selection or reset? Let's reset to all defaults selected
+      setSelectedPrompts(availablePrompts.reduce((acc, p) => ({ ...acc, [p]: true }), {}));
+      return;
+    }
+
+    // Trigger fetch for the new template context
+    fetchInvoices(templateId);
+
+    const template = templates.find(t => t._id === templateId);
+    if (template) {
+      // Merge unique fields from template with standard prompts
+      // For strict isolation, we might ONLY want the template fields? 
+      // User said: "Only the fields saved under that template will be extracted and shown"
+      // So we should NOT merge with availablePrompts, but strictly use template.fields
+
+      const newDisplay = template.fields.length > 0 ? template.fields : availablePrompts;
+      setDisplayPrompts(newDisplay);
+
+      // Select all by default for the template
+      const newSelection = newDisplay.reduce((acc, p) => ({ ...acc, [p]: true }), {});
+      setSelectedPrompts(newSelection);
+    }
+  };
+
+  const fetchInvoices = async (templateIdToFetch) => {
+    // If no argument provided, use current state (though state update might be laggy, so arg is better)
+    const tid = templateIdToFetch !== undefined ? templateIdToFetch : selectedTemplateId;
+
+    try {
+      const response = await axios.get('/api', {
+        params: { templateId: tid }
+      });
       setInvoices(response.data);
     } catch (error) {
       console.error('Error fetching invoices:', error);
@@ -86,7 +129,7 @@ const InvoiceUpload = ({ isActive }) => {
 
   const selectAllPrompts = (isSelected) => {
     setSelectedPrompts(
-      availablePrompts.reduce((acc, prompt) => ({ ...acc, [prompt]: isSelected }), {})
+      displayPrompts.reduce((acc, prompt) => ({ ...acc, [prompt]: isSelected }), {})
     );
   };
 
@@ -141,6 +184,10 @@ const InvoiceUpload = ({ isActive }) => {
     activePrompts.forEach(prompt => {
       formData.append('prompts[]', prompt);
     });
+
+    if (selectedTemplateId) {
+      formData.append('templateId', selectedTemplateId);
+    }
 
     try {
       const response = await axios.post('/api/bulk-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -269,8 +316,19 @@ const InvoiceUpload = ({ isActive }) => {
     showExport = false,
     totalItemCount = 0,
   }) => {
-    // --- FINAL FIX: Use fixed headers based on all available prompts ---
-    const columns = availablePrompts;
+    // --- FINAL FIX: Use dynamic headers based on all available keys in the list ---
+    // Instead of just availablePrompts, we should likely look at what's actually in the data or use a superset.
+    // For now, let's use displayPrompts if we are showing the current upload, 
+    // but for "All Processed", we might miss columns if we only use the current template's prompts.
+    // Ideally, "All Invoices" should compute columns dynamically or use a master list.
+    // Let's rely on the previous implementation for Excel export which collected all keys.
+    // For the TABLE, let's collect all keys from the visible invoices + displayPrompts to be safe.
+
+    const allKeys = new Set(displayPrompts);
+    invoiceList.forEach(inv => {
+      if (inv.details) Object.keys(inv.details).forEach(k => allKeys.add(k));
+    });
+    const columns = Array.from(allKeys);
     const totalCount = totalItemCount || invoiceList.length;
 
     // Don't render the table at all if there are no columns and no items,
@@ -381,6 +439,34 @@ const InvoiceUpload = ({ isActive }) => {
         onSave={handleSaveInvoice}
       />
 
+      <InvoiceDetailPanel
+        invoice={selectedInvoice}
+        onClose={() => setSelectedInvoice(null)}
+        onSave={handleSaveInvoice}
+      />
+
+      {/* --- TEMPLATE SELECTOR (MOVED UP) --- */}
+      <div className="max-w-3xl mx-auto mb-6">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-700 font-semibold">Current View:</span>
+            <select
+              value={selectedTemplateId}
+              onChange={handleTemplateChange}
+              className="p-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+            >
+              <option value="">Standard View (All Default Fields)</option>
+              {templates.map(t => (
+                <option key={t._id} value={t._id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="text-xs text-slate-500">
+            {selectedTemplateId ? 'Viewing isolated data for this template.' : 'Viewing standard global data.'}
+          </div>
+        </div>
+      </div>
+
       <div className="max-w-3xl mx-auto">
         <div
           className={`bg-white p-8 rounded-2xl shadow-lg border transition-all duration-300 ${isDragging ? 'border-indigo-600 ring-4 ring-indigo-200' : 'border-slate-200'}`}
@@ -422,27 +508,48 @@ const InvoiceUpload = ({ isActive }) => {
               </div>
             )}
             {/* --- PROMPT CHECKBOXES --- */}
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-slate-700">Fields to Extract</label>
-                <div className="space-x-4">
-                  <button onClick={() => selectAllPrompts(true)} className="text-sm font-semibold text-indigo-600 hover:text-indigo-800">Select All</button>
-                  <button onClick={() => selectAllPrompts(false)} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Deselect All</button>
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div className="flex justify-between items-center mb-4">
+                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                  Fields to Extract
+                </label>
+                <div className="space-x-3 text-xs">
+                  <button onClick={() => selectAllPrompts(true)} className="font-medium text-indigo-600 hover:text-indigo-800 hover:underline">Select All</button>
+                  <span className="text-slate-300">|</span>
+                  <button onClick={() => selectAllPrompts(false)} className="font-medium text-slate-500 hover:text-slate-700 hover:underline">Deselect All</button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2">
-                {availablePrompts.map((promptName) => (
-                  <label key={promptName} className="flex items-center space-x-2 text-slate-600">
-                    <input
-                      type="checkbox"
-                      name={promptName}
-                      checked={selectedPrompts[promptName] || false}
-                      onChange={handlePromptCheckboxChange}
-                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span>{promptName}</span>
-                  </label>
-                ))}
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {displayPrompts.map((promptName) => {
+                  const isChecked = selectedPrompts[promptName] || false;
+                  return (
+                    <label
+                      key={promptName}
+                      className={`
+                        relative flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-all duration-200
+                        ${isChecked
+                          ? 'bg-indigo-50 border-indigo-200 shadow-sm'
+                          : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+                        }
+                      `}
+                    >
+                      <input
+                        type="checkbox"
+                        name={promptName}
+                        checked={isChecked}
+                        onChange={handlePromptCheckboxChange}
+                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition duration-150 ease-in-out"
+                      />
+                      <span className={`text-sm font-medium ${isChecked ? 'text-indigo-900' : 'text-slate-600'}`}>
+                        {promptName}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
             <button onClick={handleUpload} disabled={isLoading} className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-300 transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">

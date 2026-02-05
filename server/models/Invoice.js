@@ -14,6 +14,11 @@ const invoiceSchema = new mongoose.Schema({
     type: String,
     enum: ['Pending', 'Uploaded', 'Failed'],
     default: 'Pending'
+  },
+  templateId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Template',
+    default: null
   }
 }, {
   timestamps: true,

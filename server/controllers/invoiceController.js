@@ -20,6 +20,7 @@ exports.bulkUpload = async (req, res, next) => {
     }
 
     const prompts = req.body.prompts;
+    const templateId = req.body.templateId && req.body.templateId !== '' ? req.body.templateId : null;
     const allInvoicesData = [];
 
     for (const file of req.files) {
@@ -29,7 +30,8 @@ exports.bulkUpload = async (req, res, next) => {
         // Prepare data for the new schema
         allInvoicesData.push({
           pdfFilename: file.filename,
-          details: extractedData, // The extracted data is now stored in the 'details' map
+          details: extractedData,
+          templateId: templateId
         });
 
       } catch (processingError) {
@@ -147,10 +149,18 @@ exports.getInvoicePDF = async (req, res, next) => {
   }
 };
 
-// Correctly handle the details map when sending response
 exports.getInvoices = async (req, res, next) => {
   try {
-    const invoices = await Invoice.find().sort({ createdAt: -1 });
+    const { templateId } = req.query;
+    let query = {};
+
+    if (templateId && templateId !== '' && templateId !== 'null') {
+      query.templateId = templateId;
+    } else {
+      query.templateId = null;
+    }
+
+    const invoices = await Invoice.find(query).sort({ createdAt: -1 });
     // Manually construct the response to ensure the 'details' Map is converted
     const plainInvoices = invoices.map(invoice => {
       return {
@@ -160,7 +170,8 @@ exports.getInvoices = async (req, res, next) => {
         updatedAt: invoice.updatedAt,
         updatedAt: invoice.updatedAt,
         details: invoice.details ? Object.fromEntries(invoice.details) : {},
-        dmsStatus: invoice.dmsStatus || 'Pending'
+        dmsStatus: invoice.dmsStatus || 'Pending',
+        templateId: invoice.templateId
       };
     });
     res.json(plainInvoices);
@@ -175,6 +186,10 @@ exports.exportExcel = async (req, res, next) => {
 
     // Since columns are dynamic, we need to handle them differently.
     // 1. Collect all possible keys from all invoices.
+    // 1. Collect all possible keys from all invoices.
+    // NOTE: For better isolation, export should probably also filter by template.
+    // But keeping it global for now or just respecting the same filtering logic if passed would be better.
+    // For simplicity, let's keep it global or we can parse query params if needed later.
     const allKeys = new Set();
     invoices.forEach(invoice => {
       if (invoice.details) {
@@ -211,22 +226,32 @@ exports.exportExcel = async (req, res, next) => {
 
 exports.clearInvoices = async (req, res, next) => {
   try {
-    // Also delete all files in the uploads directory
-    const directory = 'uploads';
-    fs.readdir(directory, (err, files) => {
-      if (err) throw err;
-      for (const file of files) {
-        // Keep .gitkeep if it exists
-        if (file !== '.gitkeep') {
-          fs.unlink(path.join(directory, file), err => {
-            if (err) throw err;
-          });
-        }
-      }
-    });
+    // Updated to only clear for specific template if provided, or clear all?
+    // User probably expects "Clear" to clear the CURRENT view.
 
-    await Invoice.deleteMany({});
-    res.status(200).json({ message: 'Database and uploaded files cleared successfully.' });
+    const { templateId } = req.query;
+    let query = {};
+
+    if (templateId && templateId !== '' && templateId !== 'null') {
+      query.templateId = templateId;
+    } else {
+      query.templateId = null;
+    }
+
+    // We only delete files if we are deleting ALL invoices or if we implement reference counting.
+    // Since files are unique per invoice, we can delete files associated with the verified invoices.
+    const invoicesToDelete = await Invoice.find(query);
+    const directory = 'uploads';
+
+    for (const inv of invoicesToDelete) {
+      const filePath = path.join(directory, inv.pdfFilename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+
+    await Invoice.deleteMany(query);
+    res.status(200).json({ message: 'Invoices cleared successfully.' });
   } catch (error) {
     next(error);
   }

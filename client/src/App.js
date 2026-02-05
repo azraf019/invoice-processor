@@ -4,6 +4,7 @@ import React from 'react';
 import './App.css';
 import InvoiceUpload from './components/InvoiceUpload';
 import BulkSplitUpload from './components/BulkSplitUpload';
+import TemplateManager from './components/TemplateManager';
 
 import logo from './assets/logo.jpg';
 
@@ -50,6 +51,15 @@ function App() {
             >
               Bulk Split Upload
             </button>
+            <button
+              onClick={() => setActiveTab('templates')}
+              className={`px-6 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${activeTab === 'templates'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+            >
+              Templates
+            </button>
           </div>
         </div>
 
@@ -58,6 +68,9 @@ function App() {
         </div>
         <div className={activeTab === 'bulk-split' ? 'block' : 'hidden'}>
           <BulkSplitUpload />
+        </div>
+        <div className={activeTab === 'templates' ? 'block' : 'hidden'}>
+          <TemplateManager />
         </div>
       </main>
     </div>

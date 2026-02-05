@@ -10,12 +10,6 @@ import InvoiceDetailPanel from './InvoiceDetailPanel/InvoiceDetailPanel';
 const availablePrompts = [
     "Customer Code",
     "Customer Name",
-    "Customer TRN",
-    "Contact No",
-    "SO No",
-    "SO Date",
-    "Salesman",
-    "Dest Code",
     "Invoice No",
     "Invoice Date",
     "Payment Term"
@@ -33,22 +27,59 @@ const BulkSplitUpload = () => {
     const [isDragging, setIsDragging] = useState(false);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [isBulkUploading, setIsBulkUploading] = useState(false);
+    const [templates, setTemplates] = useState([]);
+    const [selectedTemplateId, setSelectedTemplateId] = useState('');
+    const [displayPrompts, setDisplayPrompts] = useState(availablePrompts);
 
     // --- DATA FETCHING ---
-    const fetchBulkInvoices = async () => {
+    const fetchBulkInvoices = async (templateIdToFetch) => {
+        const tid = templateIdToFetch !== undefined ? templateIdToFetch : selectedTemplateId;
         try {
-            const response = await axios.get('/api/bulk-split-invoices');
+            const response = await axios.get('/api/bulk-split-invoices', {
+                params: { templateId: tid }
+            });
             setProcessedInvoices(response.data);
         } catch (error) {
             console.error('Error fetching bulk invoices:', error);
-            // Fallback to local storage if API fails or for initial state if needed, 
-            // but API is preferred for persistence.
         }
     };
 
     useEffect(() => {
+        fetchTemplates();
         fetchBulkInvoices();
     }, []);
+
+    const fetchTemplates = async () => {
+        try {
+            const res = await axios.get('/api/templates');
+            setTemplates(res.data);
+        } catch (err) {
+            console.error('Error fetching templates:', err);
+        }
+    };
+
+    const handleTemplateChange = (e) => {
+        const templateId = e.target.value;
+        setSelectedTemplateId(templateId);
+
+        if (!templateId) {
+            // Reset to defaults
+            setDisplayPrompts(availablePrompts);
+            setSelectedPrompts(availablePrompts.reduce((acc, p) => ({ ...acc, [p]: true }), {}));
+            fetchBulkInvoices(null);
+            return;
+        }
+
+        fetchBulkInvoices(templateId);
+
+        const template = templates.find(t => t._id === templateId);
+        if (template) {
+            const newDisplay = template.fields.length > 0 ? template.fields : availablePrompts;
+            setDisplayPrompts(newDisplay);
+            const newSelection = newDisplay.reduce((acc, p) => ({ ...acc, [p]: true }), {});
+            setSelectedPrompts(newSelection);
+        }
+    };
 
     // --- FILE HANDLING ---
     const handleFileSelect = (selectedFile) => {
@@ -125,6 +156,10 @@ const BulkSplitUpload = () => {
         activePrompts.forEach(prompt => {
             formData.append('prompts[]', prompt);
         });
+
+        if (selectedTemplateId) {
+            formData.append('templateId', selectedTemplateId);
+        }
 
         try {
             const response = await axios.post('/api/bulk-split-upload', formData, {
@@ -204,6 +239,28 @@ const BulkSplitUpload = () => {
                 onSave={handleSaveInvoice}
             />
 
+            {/* --- TEMPLATE SELECTOR --- */}
+            <div className="max-w-3xl mx-auto mb-6">
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <span className="text-slate-700 font-semibold">Current View:</span>
+                        <select
+                            value={selectedTemplateId}
+                            onChange={handleTemplateChange}
+                            className="p-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                        >
+                            <option value="">Standard View (All Default Fields)</option>
+                            {templates.map(t => (
+                                <option key={t._id} value={t._id}>{t.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                        {selectedTemplateId ? 'Viewing isolated data for this template.' : 'Viewing standard global data.'}
+                    </div>
+                </div>
+            </div>
+
             <div className="max-w-3xl mx-auto">
                 <div
                     className={`bg-white p-8 rounded-2xl shadow-lg border transition-all duration-300 ${isDragging ? 'border-indigo-600 ring-4 ring-indigo-200' : 'border-slate-200'}`}
@@ -241,27 +298,48 @@ const BulkSplitUpload = () => {
                         )}
 
                         {/* PROMPTS */}
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="block text-sm font-medium text-slate-700">Fields to Extract</label>
-                                <div className="space-x-4">
-                                    <button onClick={() => selectAllPrompts(true)} className="text-sm font-semibold text-indigo-600 hover:text-indigo-800">Select All</button>
-                                    <button onClick={() => selectAllPrompts(false)} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Deselect All</button>
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                            <div className="flex justify-between items-center mb-4">
+                                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                    </svg>
+                                    Fields to Extract
+                                </label>
+                                <div className="space-x-3 text-xs">
+                                    <button onClick={() => selectAllPrompts(true)} className="font-medium text-indigo-600 hover:text-indigo-800 hover:underline">Select All</button>
+                                    <span className="text-slate-300">|</span>
+                                    <button onClick={() => selectAllPrompts(false)} className="font-medium text-slate-500 hover:text-slate-700 hover:underline">Deselect All</button>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2">
-                                {availablePrompts.map((promptName) => (
-                                    <label key={promptName} className="flex items-center space-x-2 text-slate-600">
-                                        <input
-                                            type="checkbox"
-                                            name={promptName}
-                                            checked={selectedPrompts[promptName] || false}
-                                            onChange={handlePromptCheckboxChange}
-                                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                        />
-                                        <span>{promptName}</span>
-                                    </label>
-                                ))}
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {displayPrompts.map((promptName) => {
+                                    const isChecked = selectedPrompts[promptName] || false;
+                                    return (
+                                        <label
+                                            key={promptName}
+                                            className={`
+                                                relative flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-all duration-200
+                                                ${isChecked
+                                                    ? 'bg-indigo-50 border-indigo-200 shadow-sm'
+                                                    : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+                                                }
+                                            `}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                name={promptName}
+                                                checked={isChecked}
+                                                onChange={handlePromptCheckboxChange}
+                                                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition duration-150 ease-in-out"
+                                            />
+                                            <span className={`text-sm font-medium ${isChecked ? 'text-indigo-900' : 'text-slate-600'}`}>
+                                                {promptName}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -296,7 +374,8 @@ const BulkSplitUpload = () => {
                                 <thead className="bg-slate-100">
                                     <tr>
                                         {/* Removed PDF Name Column */}
-                                        {availablePrompts.map(col => <th key={col} className="py-3 px-2 text-left font-semibold text-slate-600 break-words w-24">{col}</th>)}
+                                        {/* Removed PDF Name Column */}
+                                        {displayPrompts.map(col => <th key={col} className="py-3 px-2 text-left font-semibold text-slate-600 break-words w-24">{col}</th>)}
                                         <th className="py-3 px-2 text-center font-semibold text-slate-600 w-24">DMS Status</th>
                                         <th className="py-3 px-2 text-center font-semibold text-slate-600 w-20">Actions</th>
                                     </tr>
@@ -305,7 +384,7 @@ const BulkSplitUpload = () => {
                                     {processedInvoices.map((invoice) => (
                                         <tr key={invoice._id} className="hover:bg-sky-50/50">
                                             {/* Removed PDF Name Cell */}
-                                            {availablePrompts.map(col => (
+                                            {displayPrompts.map(col => (
                                                 <td key={col} className="py-3 px-2 text-slate-600 break-words">{invoice.details?.[col] || 'N/A'}</td>
                                             ))}
                                             <td className="py-3 px-2 text-center">

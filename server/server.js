@@ -24,6 +24,7 @@ connectDB();
 // Routes
 app.use('/api', invoiceRoutes);
 app.use('/api/bulk', bulkRoutes);
+app.use('/api/templates', require('./routes/templateRoutes'));
 
 // Error Handling
 app.use(errorHandler);

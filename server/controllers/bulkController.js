@@ -14,6 +14,7 @@ exports.splitAndProcess = async (req, res, next) => {
 
         // Prompts are sent as an array of strings by multer if appended as 'prompts[]'
         let prompts = req.body.prompts;
+        const templateId = req.body.templateId && req.body.templateId !== '' ? req.body.templateId : null;
 
         // Ensure prompts is an array. If only one prompt is selected, multer might make it a string.
         if (prompts && !Array.isArray(prompts)) {
@@ -67,6 +68,7 @@ exports.splitAndProcess = async (req, res, next) => {
                 allInvoicesData.push({
                     pdfFilename: file.filename,
                     details: extractedData,
+                    templateId: templateId,
                 });
             } catch (processingError) {
                 console.error(`Failed to process split file ${file.filename}:`, processingError.message);
@@ -92,8 +94,17 @@ exports.splitAndProcess = async (req, res, next) => {
 
 exports.getBulkSplitInvoices = async (req, res, next) => {
     try {
+        const { templateId } = req.query;
+        let query = { pdfFilename: { $regex: /^split_/ } };
+
+        if (templateId && templateId !== '' && templateId !== 'null') {
+            query.templateId = templateId;
+        } else {
+            query.templateId = null;
+        }
+
         // Find invoices where pdfFilename starts with "split_"
-        const invoices = await Invoice.find({ pdfFilename: { $regex: /^split_/ } }).sort({ createdAt: -1 });
+        const invoices = await Invoice.find(query).sort({ createdAt: -1 });
 
         const plainInvoices = invoices.map(invoice => {
             return {
@@ -102,7 +113,8 @@ exports.getBulkSplitInvoices = async (req, res, next) => {
                 createdAt: invoice.createdAt,
                 updatedAt: invoice.updatedAt,
                 details: invoice.details ? Object.fromEntries(invoice.details) : {},
-                dmsStatus: invoice.dmsStatus || 'Pending'
+                dmsStatus: invoice.dmsStatus || 'Pending',
+                templateId: invoice.templateId
             };
         });
 
